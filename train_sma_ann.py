@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
+import time
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
@@ -34,6 +36,10 @@ class SMAAnnConfig:
     use_output_sigmoid: bool = False
     learning_rate: float = 8e-4
     weight_decay: float = 1e-5
+    optimizer_name: str = "adamw"
+    optimizer_betas: tuple[float, float] = (0.9, 0.999)
+    optimizer_momentum: float = 0.9
+    rmsprop_alpha: float = 0.99
     c_loss_weight: float = 2.8
     loss_name: str = "mse"
     huber_delta: float = 0.03
@@ -126,6 +132,120 @@ class RegressionMetrics:
             "mean_rmse": float(np.nanmean(rmse)),
             "mean_r2": float(np.nanmean(r2)),
         }
+
+
+def format_rate_levels(rate_values: np.ndarray) -> str:
+    unique_rates = np.unique(np.asarray(rate_values, dtype=np.float64))
+    if unique_rates.size == 0:
+        return "none"
+    preview = ", ".join(f"{value:g}" for value in unique_rates[:8])
+    if unique_rates.size > 8:
+        preview += ", ..."
+    return f"{unique_rates.size} levels [{preview}]"
+
+
+def summarize_split_shapes(split_data: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "train_samples": int(split_data["x_train"].shape[0]),
+        "val_samples": int(split_data["x_val"].shape[0]),
+        "test_samples": int(split_data["x_test"].shape[0]),
+        "feature_dim": int(split_data["x_train_norm"].shape[1]),
+        "target_dim": int(split_data["y_train_norm"].shape[1]),
+        "rate_summary": format_rate_levels(np.concatenate([split_data["rate_train"], split_data["rate_val"], split_data["rate_test"]])),
+    }
+
+
+def estimate_runtime_band(total_steps: int, train_samples: int, feature_dim: int, model_size_hint: int, device_kind: str) -> str:
+    complexity = max(total_steps, 1) * max(train_samples, 1) * max(feature_dim, 1)
+    scaled = complexity * max(model_size_hint, 1)
+    if device_kind == "cuda":
+        if scaled < 2_500_000_000:
+            return "roughly 2-10 minutes on a typical Colab GPU"
+        if scaled < 10_000_000_000:
+            return "roughly 10-30 minutes on a typical Colab GPU"
+        return "roughly 30+ minutes on a typical Colab GPU"
+    if scaled < 2_500_000_000:
+        return "roughly 10-40 minutes on CPU"
+    if scaled < 10_000_000_000:
+        return "roughly 40-120 minutes on CPU"
+    return "roughly 2+ hours on CPU"
+
+
+def build_device_summary(device: torch.device) -> str:
+    if device.type == "cuda":
+        device_index = device.index if device.index is not None else torch.cuda.current_device()
+        props = torch.cuda.get_device_properties(device_index)
+        total_memory_gb = props.total_memory / float(1024 ** 3)
+        return f"GPU | {props.name} | VRAM={total_memory_gb:.1f} GB"
+    return "CPU | CUDA not available"
+
+
+def build_hardware_fit_note(device: torch.device, batch_size: int, epochs: int, parameter_count: int) -> str:
+    if device.type == "cuda":
+        device_index = device.index if device.index is not None else torch.cuda.current_device()
+        props = torch.cuda.get_device_properties(device_index)
+        total_memory_gb = props.total_memory / float(1024 ** 3)
+        if total_memory_gb < 8.0 and batch_size >= 128:
+            return "Current batch size may be aggressive for small GPUs; if you hit OOM, try batch_size=32 or 64."
+        if total_memory_gb < 12.0 and parameter_count > 3_000_000:
+            return "Model is moderately large for this GPU tier; reduce batch_size or use `tabular_resnet`/`mlp_tabular` if memory is tight."
+        return "Current configuration looks reasonable for GPU training. If utilization is low, you can try a larger batch size."
+    if epochs >= 200 and parameter_count > 1_000_000:
+        return "This setup may be slow on CPU; consider `xgboost`, `hist_gradient_boosting`, or lowering epochs/batch size for faster iteration."
+    if epochs >= 300:
+        return "Long CPU run expected; for quick tests, try fewer epochs or a lighter model such as `mlp_tabular`."
+    return "Current configuration should be manageable on CPU, but GPU is recommended for faster training."
+
+
+def count_model_parameters(model: nn.Module) -> tuple[int, int]:
+    total = sum(parameter.numel() for parameter in model.parameters())
+    trainable = sum(parameter.numel() for parameter in model.parameters() if parameter.requires_grad)
+    return total, trainable
+
+
+def create_torch_optimizer(parameters: Any, config: SMAAnnConfig) -> torch.optim.Optimizer:
+    optimizer_name = str(config.optimizer_name).lower()
+    if optimizer_name == "adamw":
+        return torch.optim.AdamW(
+            parameters,
+            lr=config.learning_rate,
+            weight_decay=config.weight_decay,
+            betas=config.optimizer_betas,
+        )
+    if optimizer_name == "adam":
+        return torch.optim.Adam(
+            parameters,
+            lr=config.learning_rate,
+            weight_decay=config.weight_decay,
+            betas=config.optimizer_betas,
+        )
+    if optimizer_name == "nadam":
+        return torch.optim.NAdam(
+            parameters,
+            lr=config.learning_rate,
+            weight_decay=config.weight_decay,
+            betas=config.optimizer_betas,
+        )
+    if optimizer_name == "rmsprop":
+        return torch.optim.RMSprop(
+            parameters,
+            lr=config.learning_rate,
+            weight_decay=config.weight_decay,
+            momentum=config.optimizer_momentum,
+            alpha=config.rmsprop_alpha,
+        )
+    if optimizer_name == "sgd":
+        return torch.optim.SGD(
+            parameters,
+            lr=config.learning_rate,
+            weight_decay=config.weight_decay,
+            momentum=config.optimizer_momentum,
+            nesterov=config.optimizer_momentum > 0,
+        )
+    raise ValueError(
+        "Unsupported optimizer_name "
+        f"'{config.optimizer_name}'. Choose from: adamw, adam, nadam, rmsprop, sgd"
+    )
 
 
 class MatDatasetLoader:
@@ -290,6 +410,7 @@ class SMAAnnTrainer:
         )
         self.history = {"train_loss": [], "val_loss": []}
         self.rng = np.random.default_rng(self.config.seed)
+        self.run_started_at: float | None = None
         torch.manual_seed(self.config.seed)
         if torch.cuda.is_available():
             torch.cuda.manual_seed_all(self.config.seed)
@@ -307,11 +428,48 @@ class SMAAnnTrainer:
         train_raw = self.loader.load_split(self.data_dir / "train.mat")
         test_raw = self.loader.load_split(self.data_dir / "test.mat")
         split_data = self.prepare_datasets(train_raw, test_raw)
+        self.print_run_overview(split_data)
+        self.run_started_at = time.perf_counter()
         self.train_model(split_data)
         artifacts = self.evaluate(split_data)
         self.save_artifacts(artifacts)
         self.save_plots(artifacts)
         self.print_summary(artifacts)
+
+    def print_run_overview(self, split_data: dict[str, Any]) -> None:
+        total_params, trainable_params = count_model_parameters(self.model)
+        shape_summary = summarize_split_shapes(split_data)
+        steps_per_epoch = max(1, math.ceil(shape_summary["train_samples"] / max(int(self.config.batch_size), 1)))
+        total_steps = steps_per_epoch * max(int(self.config.epochs), 1)
+        print("Run overview")
+        print(f"  Data directory      : {self.data_dir}")
+        print("  Data files         : train.mat + test.mat")
+        print(f"  Input format       : X + rate -> {shape_summary['feature_dim']} features per sample")
+        print(f"  Target format      : Y -> {shape_summary['target_dim']} regression targets {self.config.label_names}")
+        print(
+            f"  Dataset split      : train={shape_summary['train_samples']}, "
+            f"val={shape_summary['val_samples']}, test={shape_summary['test_samples']}"
+        )
+        print(f"  Rate coverage      : {shape_summary['rate_summary']}")
+        print(f"  Device             : {build_device_summary(self.device)}")
+        print(f"  Model              : {self.model.__class__.__name__}")
+        print(f"  Parameters         : total={total_params:,}, trainable={trainable_params:,}")
+        print(
+            "  Config             : "
+            f"epochs={self.config.epochs}, batch_size={self.config.batch_size}, "
+            f"lr={self.config.learning_rate:g}, optimizer={self.config.optimizer_name}"
+        )
+        print(f"  Steps              : {steps_per_epoch} per epoch, {total_steps} total")
+        print(
+            "  Time estimate      : "
+            + estimate_runtime_band(total_steps, shape_summary["train_samples"], shape_summary["feature_dim"], total_params, self.device.type)
+        )
+        print(
+            "  Hardware fit       : "
+            + build_hardware_fit_note(self.device, int(self.config.batch_size), int(self.config.epochs), total_params)
+        )
+        print("  Architecture")
+        print(self.model)
 
     def prepare_datasets(self, train_raw: dict[str, np.ndarray], test_raw: dict[str, np.ndarray]) -> dict[str, Any]:
         x_train_all = train_raw["X"].astype(np.float64)
@@ -396,11 +554,7 @@ class SMAAnnTrainer:
     def train_model(self, split_data: dict[str, Any]) -> None:
         train_loader = self.make_loader(split_data["x_train_norm"], split_data["y_train_norm"], shuffle=True)
         criterion = self.make_weighted_mse()
-        optimizer = torch.optim.AdamW(
-            self.model.parameters(),
-            lr=self.config.learning_rate,
-            weight_decay=self.config.weight_decay,
-        )
+        optimizer = create_torch_optimizer(self.model.parameters(), self.config)
         scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
             optimizer,
             mode="min",
@@ -588,6 +742,9 @@ class SMAAnnTrainer:
         plt.close(fig)
 
     def print_summary(self, artifacts: dict[str, Any]) -> None:
+        if self.run_started_at is not None:
+            elapsed_seconds = time.perf_counter() - self.run_started_at
+            print(f"Elapsed time = {elapsed_seconds / 60.0:.2f} minutes")
         print("Normalized-space test MAE [C, L, k, Asd] =")
         print(np.array(artifacts["test_metrics_norm"]["mae"]))
         print("Normalized-space test RMSE [C, L, k, Asd] =")

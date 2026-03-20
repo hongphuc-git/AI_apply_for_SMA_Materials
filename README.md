@@ -1,71 +1,105 @@
 # SMA AI Training CLI Bundle
 
-Portable training bundle for SMA parameter regression.
+Portable CLI bundle for SMA parameter regression and tabular-model experimentation.
 
-Clone or download this repository, install requirements, then run the CLI by passing your input data folder and the folder where you want to save results.
+This project lets you train multiple built-in models from the command line by passing:
 
-## What this bundle contains
+- a data folder with `--data-dir`
+- a result folder with `--runs-root`
 
-- Multi-model CLI runner: `run_training.py`
-- Advanced framework: `sma_colab_framework.py`
-- Models: `ann`, `mlp_tabular`, `cnn`, `resdnn`, `tabular_resnet`, `resdnn_v2`, `resdnn_v3`, `transformer`, `xgboost`, `random_forest`, `extra_trees`, `gradient_boosting`, `hist_gradient_boosting`, `ada_boost`
+## What is included
+
+- Main CLI: `run_training.py`
+- Training framework: `sma_colab_framework.py`
 - Visualization helper: `visualize_trained_ann_results.py`
+
+Built-in models:
+
+- `ann`
+- `mlp_tabular`
+- `cnn`
+- `resdnn`
+- `tabular_resnet`
+- `resdnn_v2`
+- `resdnn_v3`
+- `transformer`
+- `xgboost`
+- `random_forest`
+- `extra_trees`
+- `gradient_boosting`
+- `hist_gradient_boosting`
+- `ada_boost`
 
 ## Data path
 
-You only need to pass the path to your data folder with `--data-dir`.
+You only need to provide your data folder path with `--data-dir`.
 
-In the default bundle workflow, this path usually points to the folder used by the training scripts for loading SMA dataset files.
+Example:
 
-## Quick start
+```bash
+python run_training.py --model resdnn_v3 --data-dir <path-to-data-folder> --runs-root <path-to-save-results>
+```
 
-> [!TIP]
-> In the commands below, replace `<path-to-data-folder>` with your data folder path, and replace `<path-to-save-results>` with the folder where you want training outputs to be stored.
+You can also override common parameters directly from the CLI without using a config file, for example `--epochs`, `--learning-rate`, `--batch-size`, `--weight-decay`, `--dropout`, and `--c-loss-weight`.
 
-### 1. Download and enter the folder
+For neural models, you can also choose the training optimizer directly with `--train-optimizer` such as `adamw`, `adam`, `nadam`, `rmsprop`, or `sgd`.
+
+## Local setup
+
+### Download the code
+
+Clone the repository:
 
 ```bash
 git clone https://github.com/hongphuc-git/AI_apply_for_SMA_Materials.git
 cd AI_apply_for_SMA_Materials
 ```
 
-Or download it from GitHub:
+Or download it manually:
 
 1. Open `https://github.com/hongphuc-git/AI_apply_for_SMA_Materials`
 2. Click `Code` -> `Download ZIP`
 3. Extract the ZIP file
 4. Open a terminal inside the extracted `AI_apply_for_SMA_Materials` folder
 
-### 2. Install dependencies
+### Install dependencies
 
 ```bash
 python -m pip install -r requirements.txt
 ```
 
-### 3. Install on Google Colab
+### List available models
 
-Use this if you want to train directly in Colab.
+```bash
+python run_training.py --list-models
+```
 
-1. Open a new Google Colab notebook
-2. Set `Runtime` -> `Change runtime type` -> `GPU` if available
-3. Download this repository as a ZIP file from GitHub first
-4. Upload the ZIP file to Colab
-5. Run the setup cells below
+When training starts, the code now prints a short runtime summary including dataset split sizes, feature/target format, model architecture or estimator type, device usage, a rough training-time estimate, and a note about whether the current parameters look suitable for the detected hardware.
 
-Download the code first:
+## Google Colab setup
+
+Recommended Colab flow:
+
+1. Download the repository as a ZIP from GitHub
+2. Upload the ZIP file to Colab
+3. Unzip it in `/content`
+4. Install dependencies
+5. Run training
+
+### 1. Download ZIP from GitHub
 
 1. Open `https://github.com/hongphuc-git/AI_apply_for_SMA_Materials`
 2. Click `Code` -> `Download ZIP`
-3. Keep the downloaded file, for example `AI_apply_for_SMA_Materials.zip`
+3. Save the file as `AI_apply_for_SMA_Materials.zip`
 
-Upload the ZIP file to Colab:
+### 2. Upload ZIP to Colab
 
 ```python
 from google.colab import files
 uploaded = files.upload()
 ```
 
-Extract the ZIP file, enter the folder, and install dependencies:
+### 3. Unzip and install
 
 ```python
 !unzip -q /content/AI_apply_for_SMA_Materials.zip -d /content/
@@ -73,69 +107,92 @@ Extract the ZIP file, enter the folder, and install dependencies:
 !python -m pip install -r requirements.txt
 ```
 
-If your dataset is stored on Google Drive, mount Drive before training:
+### 4. Optional: mount Google Drive for dataset/results
 
 ```python
 from google.colab import drive
 drive.mount('/content/drive')
 ```
 
-Example training command in Colab:
+### 5. Train in Colab
+
+If your dataset is in Google Drive:
 
 ```python
 !python run_training.py --model resdnn_v3 --data-dir /content/drive/MyDrive/SMA_data --runs-root /content/drive/MyDrive/SMA_results
 ```
 
-If you also uploaded the dataset directly to Colab instead of Google Drive, you can run:
+If your dataset is also uploaded directly into Colab:
 
 ```python
 !python run_training.py --model resdnn_v3 --data-dir /content/SMA_data --runs-root /content/SMA_results
 ```
 
-### 4. List available models
+### Optional clone-style Colab workflow
 
-```bash
-python run_training.py --list-models
+If the repository is publicly accessible from Colab, you can also use a shorter setup like this:
+
+```python
+import os
+
+!git clone https://github.com/hongphuc-git/AI_apply_for_SMA_Materials.git
+os.chdir("AI_apply_for_SMA_Materials")
+!python -m pip install -r requirements.txt
 ```
 
-### 5. Train with explicit input and output paths
+If `git clone` fails, use the ZIP workflow above instead.
 
-```bash
-python run_training.py --model resdnn_v3 --data-dir <path-to-data-folder> --runs-root <path-to-save-results>
-```
+## Quick training examples
 
-Example:
-
-```bash
-python run_training.py --model resdnn_v3 --data-dir D:/SMA/data --runs-root D:/SMA/results
-```
-
-## Default recommended commands
-
-### Stable high-accuracy default
+### Default stable model
 
 ```bash
 python run_training.py --model resdnn_v3 --data-dir <path-to-data-folder> --runs-root <path-to-save-results> --tag default-stable
 ```
 
-### Slightly lighter stable model
+### Tabular MLP baseline
 
 ```bash
-python run_training.py --model resdnn_v2 --data-dir <path-to-data-folder> --runs-root <path-to-save-results> --tag stable-v2
+python run_training.py --model mlp_tabular --data-dir <path-to-data-folder> --runs-root <path-to-save-results> --tag mlp-tabular
 ```
 
-### Fast tree-based baseline
+### Tabular residual model
+
+```bash
+python run_training.py --model tabular_resnet --data-dir <path-to-data-folder> --runs-root <path-to-save-results> --tag tabular-resnet
+```
+
+### Tree-based baselines
 
 ```bash
 python run_training.py --model xgboost --data-dir <path-to-data-folder> --runs-root <path-to-save-results> --tag xgb-baseline
+python run_training.py --model hist_gradient_boosting --data-dir <path-to-data-folder> --runs-root <path-to-save-results> --tag hgb-baseline
 ```
 
-## Override hyperparameters
+## Hyperparameter overrides
 
 ### Inline JSON
 
 ```bash
 python run_training.py --model resdnn_v3 --data-dir <path-to-data-folder> --runs-root <path-to-save-results> --config-json '{"epochs": 300, "learning_rate": 0.00012, "batch_size": 128, "c_loss_weight": 2.8}'
+```
+
+### Direct CLI overrides
+
+```bash
+python run_training.py --model resdnn_v3 --data-dir <path-to-data-folder> --runs-root <path-to-save-results> --epochs 500 --learning-rate 0.00008 --batch-size 64
+```
+
+### Direct optimizer selection
+
+```bash
+python run_training.py --model resdnn_v3 --data-dir <path-to-data-folder> --runs-root <path-to-save-results> --epochs 500 --learning-rate 0.00008 --train-optimizer nadam
+```
+
+For optimizers that use momentum:
+
+```bash
+python run_training.py --model mlp_tabular --data-dir <path-to-data-folder> --runs-root <path-to-save-results> --train-optimizer sgd --optimizer-momentum 0.9 --learning-rate 0.0005
 ```
 
 ### JSON file
@@ -157,23 +214,15 @@ Then run:
 python run_training.py --model resdnn_v3 --data-dir <path-to-data-folder> --runs-root <path-to-save-results> --config-file config.json
 ```
 
-## PowerShell examples
-
-```powershell
-python run_training.py --model resdnn_v3 --data-dir D:/data/sma --runs-root D:/results/sma --config-json '{"epochs": 300, "learning_rate": 0.00012, "batch_size": 128, "c_loss_weight": 2.8}'
-```
-
-If PowerShell quoting is annoying, use `--config-file` instead.
-
 ## Sweep / Bayesian optimization
 
-### XGBoost BO
+### XGBoost search
 
 ```bash
 python run_training.py --model xgboost --data-dir <path-to-data-folder> --runs-root <path-to-save-results> --optimizer optuna-tpe --n-trials 12 --tag bo-xgb
 ```
 
-### ResDNN v3 BO
+### ResDNN v3 search
 
 ```bash
 python run_training.py --model resdnn_v3 --data-dir <path-to-data-folder> --runs-root <path-to-save-results> --optimizer optuna-tpe --n-trials 10 --tag bo-resdnn-v3 --config-json '{"epochs": 220}'
@@ -181,15 +230,15 @@ python run_training.py --model resdnn_v3 --data-dir <path-to-data-folder> --runs
 
 ## Output structure
 
-Each run is saved into a timestamped folder inside the directory passed to `--runs-root`.
+Every run is saved inside the folder passed to `--runs-root`.
 
-Example command:
+Example:
 
 ```bash
 python run_training.py --model resdnn_v3 --data-dir D:/SMA/data --runs-root D:/SMA/results --tag default-stable
 ```
 
-Example output structure:
+Example output:
 
 ```text
 D:/SMA/results/
@@ -202,7 +251,9 @@ D:/SMA/results/
     test_scatter_normalized.png
 ```
 
-## Create a leaderboard across finished runs
+## Summaries and visualization
+
+Create a leaderboard from finished runs:
 
 ```bash
 python run_training.py --summarize-runs-dir <path-to-save-results>
@@ -213,7 +264,7 @@ This writes:
 - `<path-to-save-results>/leaderboard.csv`
 - `<path-to-save-results>/leaderboard.json`
 
-## Visualize a finished run
+Visualize a finished run:
 
 ```bash
 python visualize_trained_ann_results.py --output-dir <path-to-save-results>/resdnn_v3_YYYYMMDD_HHMMSS_tag
@@ -221,52 +272,57 @@ python visualize_trained_ann_results.py --output-dir <path-to-save-results>/resd
 
 ## Suggested models
 
-- `resdnn_v3`: best default if you care about stable validation and target `C`
-- `tabular_resnet`: good built-in tabular residual model for structured SMA features
-- `mlp_tabular`: wider MLP baseline for tabular-style inputs
-- `resdnn_v2`: simpler stable residual model
-- `resdnn`: lighter residual baseline if you want a smaller starting point
-- `cnn`: useful when your inputs behave like structured grids or image-like maps
-- `ann`: simple fully connected baseline for compact tabular-style features
+- `resdnn_v3`: best overall default for stable SMA regression
+- `tabular_resnet`: strong built-in tabular residual model
+- `mlp_tabular`: simple built-in neural baseline for tabular inputs
 - `xgboost`: strong non-neural baseline
-- `hist_gradient_boosting`: fast boosted-tree option for larger tabular datasets
-- `gradient_boosting` / `ada_boost`: additional classical tabular boosting baselines
-- `transformer`: sequence-style alternative
-- `random_forest` / `extra_trees`: quick baselines
+- `hist_gradient_boosting`: fast boosting baseline for larger structured datasets
+- `random_forest` / `extra_trees`: quick comparison baselines
+- `cnn` / `transformer`: useful when the input is treated more like sequence or structured signal data
+
+## Built-in tabular models
+
+Neural tabular-style options already implemented:
+
+- `ann`
+- `mlp_tabular`
+- `resdnn`
+- `tabular_resnet`
+- `resdnn_v2`
+- `resdnn_v3`
+
+Tree and ensemble baselines already implemented:
+
+- `xgboost`
+- `random_forest`
+- `extra_trees`
+- `gradient_boosting`
+- `hist_gradient_boosting`
+- `ada_boost`
 
 ## Possible extensions
 
-This bundle is currently documented for supervised SMA regression, but the same data-to-output workflow can also be used as a reference when adapting the project to other ML settings.
+This repository is currently focused on supervised SMA regression, but the same workflow can be reused for broader ML experiments.
 
-### Models you can also explore
+External models that may be worth adding later:
 
-- Built in now: `ann`, `mlp_tabular`, `resdnn`, `tabular_resnet`, `resdnn_v2`, `resdnn_v3`, `xgboost`, `random_forest`, `extra_trees`, `gradient_boosting`, `hist_gradient_boosting`, `ada_boost`
-- `cnn` / `transformer`: useful if your SMA inputs are treated as ordered sequences, spatial maps, or time-frequency representations
-- `ann` / `mlp_tabular`: suitable for compact engineered features or reduced latent vectors
-- `resdnn`, `tabular_resnet`, `resdnn_v2`, `resdnn_v3`: good candidates when you want deeper residual backbones for harder nonlinear mappings
-- `xgboost`, `random_forest`, `extra_trees`, `gradient_boosting`, `hist_gradient_boosting`, `ada_boost`: practical tabular baselines for comparing neural and non-neural performance
+- `LightGBM`
+- `CatBoost`
+- `TabNet`
+- `FT-Transformer`
 
-For tabular data specifically, many current workflows also consider external models such as:
+### Flow matching note
 
-- `LightGBM`: strong gradient-boosted tree baseline for structured tables
-- `CatBoost`: often effective when categorical features or mixed tabular signals are involved
-- `TabNet`: deep tabular model with feature selection-style attention
-- `FT-Transformer`: transformer-style architecture designed for tabular inputs
+This bundle is not a ready-made flow-matching implementation, but it can still serve as a workflow reference.
 
-These models are not implemented in this bundle by default, but they are reasonable next steps if you want to expand beyond the current built-in models.
-
-### Applying the workflow to flow matching
-
-If you want to extend the project toward flow matching, this repository can be used mainly as a workflow reference, not as a ready-made flow-matching implementation.
-
-- Reuse the same ideas for dataset paths, training outputs, experiment tags, and saved result folders
-- Replace the current regression target with the quantity needed by flow matching, such as velocity, drift, or trajectory-related supervision
-- Start from `ann`, `cnn`, `resdnn`, or `transformer` as backbone candidates depending on whether your inputs are tabular, spatial, or sequential
-- Keep `xgboost` or tree models as simple non-generative baselines for comparison tasks, but they are not typical backbones for flow matching itself
+- Reuse the dataset path handling
+- Reuse the output folder and run manifest flow
+- Reuse experiment tags and result tracking
+- Swap the current regression target for flow-matching supervision such as velocity, drift, or trajectory terms
 
 ## Notes
 
 - GPU is used automatically for PyTorch models when CUDA is available.
-- `xgboost` currently uses CPU-oriented settings by default.
-- Dataset files are not included; pass your own data folder path with `--data-dir`.
-- If you omit `--data-dir`, the CLI prompts for it, but using `--data-dir` and `--runs-root` explicitly is recommended for reproducible runs.
+- `xgboost` currently uses CPU-oriented defaults.
+- Dataset files are not included.
+- For reproducible runs, prefer passing both `--data-dir` and `--runs-root` explicitly.

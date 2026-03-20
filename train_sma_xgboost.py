@@ -3,13 +3,21 @@ from __future__ import annotations
 import argparse
 import importlib
 import json
+import time
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
 
 import numpy as np
 
-from train_sma_ann import MatDatasetLoader, MinMaxNormalizer, RegressionMetrics, SMAAnnConfig
+from train_sma_ann import (
+    MatDatasetLoader,
+    MinMaxNormalizer,
+    RegressionMetrics,
+    SMAAnnConfig,
+    estimate_runtime_band,
+    summarize_split_shapes,
+)
 
 try:
     import matplotlib
@@ -55,16 +63,53 @@ class SMAXGBoostTrainer:
         self.rng = np.random.default_rng(self.config.seed)
         self.models: dict[str, Any] = {}
         self.history = {"train_loss": [], "val_loss": [], "per_target": {}}
+        self.run_started_at: float | None = None
 
     def run(self) -> None:
         train_raw = self.loader.load_split(self.data_dir / "train.mat")
         test_raw = self.loader.load_split(self.data_dir / "test.mat")
         split_data = self.prepare_datasets(train_raw, test_raw)
+        self.print_run_overview(split_data)
+        self.run_started_at = time.perf_counter()
         self.train_model(split_data)
         artifacts = self.evaluate(split_data)
         self.save_artifacts(artifacts)
         self.save_plots(artifacts)
         self.print_summary(artifacts)
+
+    def print_run_overview(self, split_data: dict[str, Any]) -> None:
+        shape_summary = summarize_split_shapes(split_data)
+        print("Run overview")
+        print(f"  Data directory      : {self.data_dir}")
+        print("  Data files         : train.mat + test.mat")
+        print(f"  Input format       : X + rate -> {shape_summary['feature_dim']} features per sample")
+        print(f"  Target format      : Y -> {shape_summary['target_dim']} regression targets {self.config.label_names}")
+        print(
+            f"  Dataset split      : train={shape_summary['train_samples']}, "
+            f"val={shape_summary['val_samples']}, test={shape_summary['test_samples']}"
+        )
+        print(f"  Rate coverage      : {shape_summary['rate_summary']}")
+        print("  Device             : CPU-oriented XGBoost")
+        print("  Model              : XGBRegressor x 4 targets")
+        print(
+            f"  Config             : n_estimators={self.config.n_estimators}, max_depth={self.config.max_depth}, "
+            f"learning_rate={self.config.learning_rate:g}, n_jobs={self.config.n_jobs}"
+        )
+        print(
+            "  Time estimate      : "
+            + estimate_runtime_band(
+                max(int(self.config.n_estimators), 1),
+                shape_summary["train_samples"],
+                shape_summary["feature_dim"],
+                len(self.config.label_names),
+                "cpu",
+            )
+        )
+        if self.config.n_estimators >= 1000:
+            fit_note = "This is a heavy boosting setup; lower n_estimators or max_depth if CPU time is too long."
+        else:
+            fit_note = "Current configuration is usually reasonable for CPU-based boosted trees."
+        print(f"  Hardware fit       : {fit_note}")
 
     def prepare_datasets(self, train_raw: dict[str, np.ndarray], test_raw: dict[str, np.ndarray]) -> dict[str, Any]:
         x_train_all = train_raw["X"].astype(np.float64)
@@ -367,6 +412,9 @@ class SMAXGBoostTrainer:
         pyplot.close(fig)
 
     def print_summary(self, artifacts: dict[str, Any]) -> None:
+        if self.run_started_at is not None:
+            elapsed_seconds = time.perf_counter() - self.run_started_at
+            print(f"Elapsed time = {elapsed_seconds / 60.0:.2f} minutes")
         print("Normalized-space test MAE [C, L, k, Asd] =")
         print(np.array(artifacts["test_metrics_norm"]["mae"]))
         print("Normalized-space test RMSE [C, L, k, Asd] =")

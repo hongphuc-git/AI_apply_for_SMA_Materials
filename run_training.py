@@ -24,6 +24,20 @@ def resolve_data_dir(data_dir_arg: str | None) -> str:
     return entered
 
 
+def collect_cli_overrides(args: argparse.Namespace) -> dict[str, object]:
+    override_map = {
+        "epochs": args.epochs,
+        "learning_rate": args.learning_rate,
+        "batch_size": args.batch_size,
+        "weight_decay": args.weight_decay,
+        "dropout": args.dropout,
+        "c_loss_weight": args.c_loss_weight,
+        "optimizer_name": args.train_optimizer,
+        "optimizer_momentum": args.optimizer_momentum,
+    }
+    return {key: value for key, value in override_map.items() if value is not None}
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Portable SMA AI training CLI for GitHub use.")
     parser.add_argument("--root", type=Path, default=Path(__file__).resolve().parent, help="Bundle root")
@@ -37,6 +51,24 @@ def main() -> None:
     )
     parser.add_argument("--runs-root", type=str, default="runs", help="Directory for timestamped outputs")
     parser.add_argument("--tag", type=str, default=None, help="Optional run tag")
+    parser.add_argument("--epochs", type=int, default=None, help="Direct override for training epochs")
+    parser.add_argument("--learning-rate", type=float, default=None, help="Direct override for learning rate")
+    parser.add_argument("--batch-size", type=int, default=None, help="Direct override for batch size")
+    parser.add_argument("--weight-decay", type=float, default=None, help="Direct override for weight decay")
+    parser.add_argument("--dropout", type=float, default=None, help="Direct override for dropout")
+    parser.add_argument("--c-loss-weight", type=float, default=None, help="Direct override for C target loss weight")
+    parser.add_argument(
+        "--train-optimizer",
+        choices=("adamw", "adam", "nadam", "rmsprop", "sgd"),
+        default=None,
+        help="Direct override for neural-network optimizer algorithm",
+    )
+    parser.add_argument(
+        "--optimizer-momentum",
+        type=float,
+        default=None,
+        help="Direct override for optimizer momentum used by SGD/RMSprop",
+    )
     parser.add_argument("--config-json", type=str, default=None, help="JSON string of config overrides")
     parser.add_argument("--config-file", type=Path, default=None, help="Path to JSON config overrides")
     parser.add_argument("--search-space-json", type=str, default=None, help="JSON string overriding optimizer search space")
@@ -58,6 +90,7 @@ def main() -> None:
         return
 
     overrides = load_overrides(args.config_json, args.config_file)
+    overrides.update(collect_cli_overrides(args))
     overrides["explicit_data_dir"] = resolve_data_dir(args.data_dir)
     root = args.root.resolve()
     if args.optimizer == "none":

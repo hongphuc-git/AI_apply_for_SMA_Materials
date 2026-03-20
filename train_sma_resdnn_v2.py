@@ -9,7 +9,7 @@ from typing import Any
 import torch
 from torch import nn
 
-from train_sma_ann import SMAAnnConfig, SMAAnnTrainer
+from train_sma_ann import SMAAnnConfig, SMAAnnTrainer, create_torch_optimizer
 
 
 @dataclass
@@ -18,6 +18,7 @@ class SMAResidualDNNV2Config(SMAAnnConfig):
     dropout: float = 0.03
     learning_rate: float = 1.5e-4
     weight_decay: float = 2e-5
+    optimizer_betas: tuple[float, float] = (0.9, 0.95)
     c_loss_weight: float = 2.4
     loss_name: str = "huber"
     huber_delta: float = 0.02
@@ -116,12 +117,7 @@ class SMAResidualDNNV2Trainer(SMAAnnTrainer):
     def train_model(self, split_data: dict[str, Any]) -> None:
         train_loader = self.make_loader(split_data["x_train_norm"], split_data["y_train_norm"], shuffle=True)
         criterion = self.make_weighted_mse()
-        optimizer = torch.optim.AdamW(
-            self.model.parameters(),
-            lr=self.config.learning_rate,
-            weight_decay=self.config.weight_decay,
-            betas=(0.9, 0.95),
-        )
+        optimizer = create_torch_optimizer(self.model.parameters(), self.config)
         best_val_loss = float("inf")
         best_state: dict[str, torch.Tensor] | None = None
         epochs_without_improvement = 0
