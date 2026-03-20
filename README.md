@@ -48,20 +48,24 @@ Use this if you want to train directly in Colab.
 
 1. Open a new Google Colab notebook
 2. Set `Runtime` -> `Change runtime type` -> `GPU` if available
-3. Run the setup cells below
+3. Download this repository as a ZIP file from GitHub first
+4. Upload the ZIP file to Colab
+5. Run the setup cells below
 
-Recommended: use Google Drive if this repository is private or if `git clone` asks for a GitHub username/password.
+Download the code first:
 
-Use Google Drive:
+1. Open `https://github.com/hongphuc-git/AI_apply_for_SMA_Materials`
+2. Click `Code` -> `Download ZIP`
+3. Keep the downloaded file, for example `AI_apply_for_SMA_Materials.zip`
+
+Upload the ZIP file to Colab:
 
 ```python
-from google.colab import drive
-drive.mount('/content/drive')
-%cd /content/drive/MyDrive/AI_apply_for_SMA_Materials
-!python -m pip install -r requirements.txt
+from google.colab import files
+uploaded = files.upload()
 ```
 
-Or upload a ZIP file manually to Colab and extract it:
+Extract the ZIP file, enter the folder, and install dependencies:
 
 ```python
 !unzip -q /content/AI_apply_for_SMA_Materials.zip -d /content/
@@ -69,20 +73,23 @@ Or upload a ZIP file manually to Colab and extract it:
 !python -m pip install -r requirements.txt
 ```
 
-If the GitHub repository is public and accessible, you can still clone it directly:
+If your dataset is stored on Google Drive, mount Drive before training:
 
 ```python
-!git clone https://github.com/hongphuc-git/AI_apply_for_SMA_Materials.git
-%cd /content/AI_apply_for_SMA_Materials
-!python -m pip install -r requirements.txt
+from google.colab import drive
+drive.mount('/content/drive')
 ```
-
-If `git clone` fails, do not continue with `%cd /content/AI_apply_for_SMA_Materials` yet. Use the Google Drive or ZIP workflow above first.
 
 Example training command in Colab:
 
 ```python
 !python run_training.py --model resdnn_v3 --data-dir /content/drive/MyDrive/SMA_data --runs-root /content/drive/MyDrive/SMA_results
+```
+
+If you also uploaded the dataset directly to Colab instead of Google Drive, you can run:
+
+```python
+!python run_training.py --model resdnn_v3 --data-dir /content/SMA_data --runs-root /content/SMA_results
 ```
 
 ### 4. List available models
