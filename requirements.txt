@@ -1,0 +1,8 @@
+numpy
+scipy
+h5py
+matplotlib
+torch
+scikit-learn
+xgboost>=2,<3
+optuna
