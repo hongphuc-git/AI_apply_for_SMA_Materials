@@ -2,7 +2,7 @@
 
 Portable training bundle for SMA parameter regression.
 
-Clone this folder to GitHub, clone it anywhere else, install requirements, point the CLI to your data folder, and train from the terminal.
+Clone or download this repository, install requirements, then run the CLI by passing your input data folder and the folder where you want to save results.
 
 ## What this bundle contains
 
@@ -25,12 +25,22 @@ The CLI requires this path and passes it directly into the training config.
 
 ## Quick start
 
-### 1. Clone and enter the folder
+> [!TIP]
+> In the commands below, replace `<path-to-data-folder>` with the folder containing `train.mat` and `test.mat`, and replace `<path-to-save-results>` with the folder where you want training outputs to be stored.
+
+### 1. Download and enter the folder
 
 ```bash
-git clone <your-repo-url>
-cd sma_ai_github_bundle
+git clone https://github.com/hongphuc-git/AI_apply_for_SMA_Materials.git
+cd AI_apply_for_SMA_Materials
 ```
+
+Or download it from GitHub:
+
+1. Open `https://github.com/hongphuc-git/AI_apply_for_SMA_Materials`
+2. Click `Code` -> `Download ZIP`
+3. Extract the ZIP file
+4. Open a terminal inside the extracted `AI_apply_for_SMA_Materials` folder
 
 ### 2. Install dependencies
 
@@ -44,18 +54,16 @@ python -m pip install -r requirements.txt
 python run_training.py --list-models
 ```
 
-### 4. Train with defaults
-
-If you omit `--data-dir`, the CLI will prompt for it.
+### 4. Train with explicit input and output paths
 
 ```bash
-python run_training.py --model resdnn_v3
+python run_training.py --model resdnn_v3 --data-dir <path-to-data-folder> --runs-root <path-to-save-results>
 ```
 
-Or pass it explicitly:
+Example:
 
 ```bash
-python run_training.py --model resdnn_v3 --data-dir /path/to/data
+python run_training.py --model resdnn_v3 --data-dir D:/SMA/data --runs-root D:/SMA/results
 ```
 
 ## Default recommended commands
@@ -63,19 +71,19 @@ python run_training.py --model resdnn_v3 --data-dir /path/to/data
 ### Stable high-accuracy default
 
 ```bash
-python run_training.py --model resdnn_v3 --data-dir /path/to/data --tag default-stable
+python run_training.py --model resdnn_v3 --data-dir <path-to-data-folder> --runs-root <path-to-save-results> --tag default-stable
 ```
 
 ### Slightly lighter stable model
 
 ```bash
-python run_training.py --model resdnn_v2 --data-dir /path/to/data --tag stable-v2
+python run_training.py --model resdnn_v2 --data-dir <path-to-data-folder> --runs-root <path-to-save-results> --tag stable-v2
 ```
 
 ### Fast tree-based baseline
 
 ```bash
-python run_training.py --model xgboost --data-dir /path/to/data --tag xgb-baseline
+python run_training.py --model xgboost --data-dir <path-to-data-folder> --runs-root <path-to-save-results> --tag xgb-baseline
 ```
 
 ## Override hyperparameters
@@ -83,7 +91,7 @@ python run_training.py --model xgboost --data-dir /path/to/data --tag xgb-baseli
 ### Inline JSON
 
 ```bash
-python run_training.py --model resdnn_v3 --data-dir /path/to/data --config-json '{"epochs": 300, "learning_rate": 0.00012, "batch_size": 128, "c_loss_weight": 2.8}'
+python run_training.py --model resdnn_v3 --data-dir <path-to-data-folder> --runs-root <path-to-save-results> --config-json '{"epochs": 300, "learning_rate": 0.00012, "batch_size": 128, "c_loss_weight": 2.8}'
 ```
 
 ### JSON file
@@ -102,13 +110,13 @@ Create `config.json`:
 Then run:
 
 ```bash
-python run_training.py --model resdnn_v3 --data-dir /path/to/data --config-file config.json
+python run_training.py --model resdnn_v3 --data-dir <path-to-data-folder> --runs-root <path-to-save-results> --config-file config.json
 ```
 
 ## PowerShell examples
 
 ```powershell
-python run_training.py --model resdnn_v3 --data-dir D:/data/sma --config-json '{"epochs": 300, "learning_rate": 0.00012, "batch_size": 128, "c_loss_weight": 2.8}'
+python run_training.py --model resdnn_v3 --data-dir D:/data/sma --runs-root D:/results/sma --config-json '{"epochs": 300, "learning_rate": 0.00012, "batch_size": 128, "c_loss_weight": 2.8}'
 ```
 
 If PowerShell quoting is annoying, use `--config-file` instead.
@@ -118,21 +126,29 @@ If PowerShell quoting is annoying, use `--config-file` instead.
 ### XGBoost BO
 
 ```bash
-python run_training.py --model xgboost --data-dir /path/to/data --optimizer optuna-tpe --n-trials 12 --tag bo-xgb
+python run_training.py --model xgboost --data-dir <path-to-data-folder> --runs-root <path-to-save-results> --optimizer optuna-tpe --n-trials 12 --tag bo-xgb
 ```
 
 ### ResDNN v3 BO
 
 ```bash
-python run_training.py --model resdnn_v3 --data-dir /path/to/data --optimizer optuna-tpe --n-trials 10 --tag bo-resdnn-v3 --config-json '{"epochs": 220}'
+python run_training.py --model resdnn_v3 --data-dir <path-to-data-folder> --runs-root <path-to-save-results> --optimizer optuna-tpe --n-trials 10 --tag bo-resdnn-v3 --config-json '{"epochs": 220}'
 ```
 
 ## Output structure
 
-Each run is saved into a timestamped folder inside `runs/`:
+Each run is saved into a timestamped folder inside the directory passed to `--runs-root`.
+
+Example command:
+
+```bash
+python run_training.py --model resdnn_v3 --data-dir D:/SMA/data --runs-root D:/SMA/results --tag default-stable
+```
+
+Example output structure:
 
 ```text
-runs/
+D:/SMA/results/
   resdnn_v3_20260320_101500_default-stable/
     run_manifest.json
     metrics.json
@@ -145,18 +161,18 @@ runs/
 ## Create a leaderboard across finished runs
 
 ```bash
-python run_training.py --summarize-runs-dir runs
+python run_training.py --summarize-runs-dir <path-to-save-results>
 ```
 
 This writes:
 
-- `runs/leaderboard.csv`
-- `runs/leaderboard.json`
+- `<path-to-save-results>/leaderboard.csv`
+- `<path-to-save-results>/leaderboard.json`
 
 ## Visualize a finished run
 
 ```bash
-python visualize_trained_ann_results.py --output-dir runs/resdnn_v3_YYYYMMDD_HHMMSS_tag
+python visualize_trained_ann_results.py --output-dir <path-to-save-results>/resdnn_v3_YYYYMMDD_HHMMSS_tag
 ```
 
 ## Suggested models
@@ -172,3 +188,4 @@ python visualize_trained_ann_results.py --output-dir runs/resdnn_v3_YYYYMMDD_HHM
 - GPU is used automatically for PyTorch models when CUDA is available.
 - `xgboost` currently uses CPU-oriented settings by default.
 - The bundle expects `train.mat` and `test.mat` only; dataset files are not included.
+- If you omit `--data-dir`, the CLI prompts for it, but using `--data-dir` and `--runs-root` explicitly is recommended for reproducible runs.
