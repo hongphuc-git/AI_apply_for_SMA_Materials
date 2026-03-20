@@ -11,22 +11,16 @@ Clone or download this repository, install requirements, then run the CLI by pas
 - Models: `ann`, `cnn`, `resdnn`, `resdnn_v2`, `resdnn_v3`, `transformer`, `xgboost`, `random_forest`, `extra_trees`
 - Visualization helper: `visualize_trained_ann_results.py`
 
-## Required dataset layout
+## Data path
 
-Your data folder must contain:
+You only need to pass the path to your data folder with `--data-dir`.
 
-```text
-your_data_folder/
-  train.mat
-  test.mat
-```
-
-The CLI requires this path and passes it directly into the training config.
+In the default bundle workflow, this path usually points to the folder used by the training scripts for loading SMA dataset files.
 
 ## Quick start
 
 > [!TIP]
-> In the commands below, replace `<path-to-data-folder>` with the folder containing `train.mat` and `test.mat`, and replace `<path-to-save-results>` with the folder where you want training outputs to be stored.
+> In the commands below, replace `<path-to-data-folder>` with your data folder path, and replace `<path-to-save-results>` with the folder where you want training outputs to be stored.
 
 ### 1. Download and enter the folder
 
@@ -48,13 +42,44 @@ Or download it from GitHub:
 python -m pip install -r requirements.txt
 ```
 
-### 3. List available models
+### 3. Install on Google Colab
+
+Use this if you want to train directly in Colab.
+
+1. Open a new Google Colab notebook
+2. Set `Runtime` -> `Change runtime type` -> `GPU` if available
+3. Run the setup cells below
+
+Clone from GitHub inside Colab:
+
+```python
+!git clone https://github.com/hongphuc-git/AI_apply_for_SMA_Materials.git
+%cd /content/AI_apply_for_SMA_Materials
+!python -m pip install -r requirements.txt
+```
+
+Or use Google Drive if your bundle and data are already stored there:
+
+```python
+from google.colab import drive
+drive.mount('/content/drive')
+%cd /content/drive/MyDrive/AI_apply_for_SMA_Materials
+!python -m pip install -r requirements.txt
+```
+
+Example training command in Colab:
+
+```python
+!python run_training.py --model resdnn_v3 --data-dir /content/drive/MyDrive/SMA_data --runs-root /content/drive/MyDrive/SMA_results
+```
+
+### 4. List available models
 
 ```bash
 python run_training.py --list-models
 ```
 
-### 4. Train with explicit input and output paths
+### 5. Train with explicit input and output paths
 
 ```bash
 python run_training.py --model resdnn_v3 --data-dir <path-to-data-folder> --runs-root <path-to-save-results>
@@ -187,5 +212,5 @@ python visualize_trained_ann_results.py --output-dir <path-to-save-results>/resd
 
 - GPU is used automatically for PyTorch models when CUDA is available.
 - `xgboost` currently uses CPU-oriented settings by default.
-- The bundle expects `train.mat` and `test.mat` only; dataset files are not included.
+- Dataset files are not included; pass your own data folder path with `--data-dir`.
 - If you omit `--data-dir`, the CLI prompts for it, but using `--data-dir` and `--runs-root` explicitly is recommended for reproducible runs.
