@@ -121,6 +121,19 @@ MODEL_REGISTRY: dict[str, dict[str, Any]] = {
         "trainer_cls": TimestampedANNTrainer,
         "description": "Baseline weighted DNN/MLP trainer",
     },
+    "mlp_tabular": {
+        "config_cls": SMAAnnConfig,
+        "trainer_cls": TimestampedANNTrainer,
+        "description": "Wider MLP tuned for tabular-style SMA features",
+        "base_overrides": {
+            "hidden_layers": (768, 384, 192, 96),
+            "dropout": 0.08,
+            "learning_rate": 6e-4,
+            "weight_decay": 2e-5,
+            "batch_size": 64,
+            "epochs": 180,
+        },
+    },
     "cnn": {
         "config_cls": SMACNNConfig,
         "trainer_cls": TimestampedCNNTrainer,
@@ -130,6 +143,20 @@ MODEL_REGISTRY: dict[str, dict[str, Any]] = {
         "config_cls": SMAResidualDNNConfig,
         "trainer_cls": TimestampedResidualDNNTrainer,
         "description": "Residual DNN baseline with MLP residual blocks",
+    },
+    "tabular_resnet": {
+        "config_cls": SMAResidualDNNConfig,
+        "trainer_cls": TimestampedResidualDNNTrainer,
+        "description": "Residual tabular network tuned for structured SMA features",
+        "base_overrides": {
+            "hidden_layers": (640, 320),
+            "block_width": 320,
+            "num_residual_blocks": 5,
+            "dropout": 0.04,
+            "learning_rate": 2e-4,
+            "batch_size": 96,
+            "epochs": 260,
+        },
     },
     "resdnn_v2": {
         "config_cls": SMAResidualDNNV2Config,
@@ -163,6 +190,43 @@ MODEL_REGISTRY: dict[str, dict[str, Any]] = {
         "description": "Extra trees multi-output baseline",
         "base_overrides": {"estimator_name": "extra_trees", "output_dir_name": "python_extra_trees_outputs"},
     },
+    "gradient_boosting": {
+        "config_cls": SMASklearnEnsembleConfig,
+        "trainer_cls": TimestampedSklearnEnsembleTrainer,
+        "description": "Gradient boosting tabular baseline wrapped for multi-output regression",
+        "base_overrides": {
+            "estimator_name": "gradient_boosting",
+            "output_dir_name": "python_gradient_boosting_outputs",
+            "n_estimators": 400,
+            "learning_rate": 0.04,
+            "max_depth": 3,
+            "subsample": 0.9,
+        },
+    },
+    "hist_gradient_boosting": {
+        "config_cls": SMASklearnEnsembleConfig,
+        "trainer_cls": TimestampedSklearnEnsembleTrainer,
+        "description": "Histogram gradient boosting baseline for larger tabular datasets",
+        "base_overrides": {
+            "estimator_name": "hist_gradient_boosting",
+            "output_dir_name": "python_hist_gradient_boosting_outputs",
+            "n_estimators": 300,
+            "learning_rate": 0.05,
+            "max_depth": 8,
+            "max_leaf_nodes": 31,
+        },
+    },
+    "ada_boost": {
+        "config_cls": SMASklearnEnsembleConfig,
+        "trainer_cls": TimestampedSklearnEnsembleTrainer,
+        "description": "AdaBoost baseline for lightweight tabular comparison runs",
+        "base_overrides": {
+            "estimator_name": "ada_boost",
+            "output_dir_name": "python_ada_boost_outputs",
+            "n_estimators": 300,
+            "learning_rate": 0.05,
+        },
+    },
 }
 
 
@@ -171,6 +235,13 @@ DEFAULT_SEARCH_SPACES: dict[str, dict[str, dict[str, Any]]] = {
         "learning_rate": {"type": "float", "low": 3e-4, "high": 2e-3, "log": True},
         "dropout": {"type": "float", "low": 0.03, "high": 0.20},
         "weight_decay": {"type": "float", "low": 1e-6, "high": 1e-4, "log": True},
+        "c_loss_weight": {"type": "float", "low": 1.5, "high": 4.5},
+        "batch_size": {"type": "categorical", "choices": [32, 64, 128]},
+    },
+    "mlp_tabular": {
+        "learning_rate": {"type": "float", "low": 2e-4, "high": 1.2e-3, "log": True},
+        "dropout": {"type": "float", "low": 0.02, "high": 0.15},
+        "weight_decay": {"type": "float", "low": 1e-6, "high": 5e-4, "log": True},
         "c_loss_weight": {"type": "float", "low": 1.5, "high": 4.5},
         "batch_size": {"type": "categorical", "choices": [32, 64, 128]},
     },
@@ -187,6 +258,14 @@ DEFAULT_SEARCH_SPACES: dict[str, dict[str, dict[str, Any]]] = {
         "c_loss_weight": {"type": "float", "low": 1.5, "high": 4.5},
         "num_residual_blocks": {"type": "int", "low": 2, "high": 6},
         "block_width": {"type": "categorical", "choices": [128, 192, 256, 384]},
+    },
+    "tabular_resnet": {
+        "learning_rate": {"type": "float", "low": 1e-4, "high": 8e-4, "log": True},
+        "dropout": {"type": "float", "low": 0.02, "high": 0.12},
+        "c_loss_weight": {"type": "float", "low": 1.5, "high": 4.0},
+        "num_residual_blocks": {"type": "int", "low": 3, "high": 7},
+        "block_width": {"type": "categorical", "choices": [192, 256, 320, 384]},
+        "batch_size": {"type": "categorical", "choices": [64, 96, 128]},
     },
     "resdnn_v2": {
         "learning_rate": {"type": "float", "low": 8e-5, "high": 4e-4, "log": True},
@@ -237,6 +316,26 @@ DEFAULT_SEARCH_SPACES: dict[str, dict[str, dict[str, Any]]] = {
         "min_samples_split": {"type": "int", "low": 2, "high": 12},
         "min_samples_leaf": {"type": "int", "low": 1, "high": 6},
         "max_features": {"type": "categorical", "choices": ["sqrt", "log2", 0.5, 0.8, 1.0]},
+    },
+    "gradient_boosting": {
+        "n_estimators": {"type": "int", "low": 150, "high": 600},
+        "learning_rate": {"type": "float", "low": 0.01, "high": 0.12, "log": True},
+        "max_depth": {"type": "int", "low": 2, "high": 6},
+        "min_samples_split": {"type": "int", "low": 2, "high": 10},
+        "min_samples_leaf": {"type": "int", "low": 1, "high": 6},
+        "subsample": {"type": "float", "low": 0.6, "high": 1.0},
+    },
+    "hist_gradient_boosting": {
+        "n_estimators": {"type": "int", "low": 100, "high": 500},
+        "learning_rate": {"type": "float", "low": 0.01, "high": 0.12, "log": True},
+        "max_depth": {"type": "categorical", "choices": [None, 4, 6, 8, 12]},
+        "min_samples_leaf": {"type": "int", "low": 10, "high": 40},
+        "max_leaf_nodes": {"type": "categorical", "choices": [15, 31, 63, 127]},
+        "l2_regularization": {"type": "float", "low": 1e-8, "high": 1e-1, "log": True},
+    },
+    "ada_boost": {
+        "n_estimators": {"type": "int", "low": 100, "high": 500},
+        "learning_rate": {"type": "float", "low": 0.01, "high": 0.2, "log": True},
     },
 }
 

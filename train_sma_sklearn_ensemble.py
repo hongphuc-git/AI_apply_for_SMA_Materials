@@ -32,6 +32,10 @@ class SMASklearnEnsembleConfig(SMAAnnConfig):
     min_samples_leaf: int = 1
     max_features: str | float | int | None = "sqrt"
     bootstrap: bool = True
+    learning_rate: float = 0.05
+    subsample: float = 1.0
+    max_leaf_nodes: int | None = 31
+    l2_regularization: float = 0.0
     n_jobs: int = -1
 
 
@@ -145,32 +149,88 @@ class SMASklearnEnsembleTrainer:
     def build_estimator(self) -> Any:
         try:
             ensemble_module = importlib.import_module("sklearn.ensemble")
+            multioutput_module = importlib.import_module("sklearn.multioutput")
         except ImportError as exc:
             raise ImportError(
                 "scikit-learn is required to run sklearn ensemble trainers. Install it with `pip install scikit-learn`."
             ) from exc
 
-        estimator_map = {
-            "random_forest": "RandomForestRegressor",
-            "extra_trees": "ExtraTreesRegressor",
-        }
-        if self.config.estimator_name not in estimator_map:
+        estimator_name = self.config.estimator_name
+        if estimator_name == "random_forest":
+            estimator_cls = getattr(ensemble_module, "RandomForestRegressor")
+            return estimator_cls(
+                n_estimators=self.config.n_estimators,
+                max_depth=self.config.max_depth,
+                min_samples_split=self.config.min_samples_split,
+                min_samples_leaf=self.config.min_samples_leaf,
+                max_features=self.config.max_features,
+                bootstrap=self.config.bootstrap,
+                n_jobs=self.config.n_jobs,
+                random_state=self.config.seed,
+            )
+        if estimator_name == "extra_trees":
+            estimator_cls = getattr(ensemble_module, "ExtraTreesRegressor")
+            return estimator_cls(
+                n_estimators=self.config.n_estimators,
+                max_depth=self.config.max_depth,
+                min_samples_split=self.config.min_samples_split,
+                min_samples_leaf=self.config.min_samples_leaf,
+                max_features=self.config.max_features,
+                bootstrap=self.config.bootstrap,
+                n_jobs=self.config.n_jobs,
+                random_state=self.config.seed,
+            )
+        if estimator_name == "gradient_boosting":
+            estimator_cls = getattr(ensemble_module, "GradientBoostingRegressor")
+            base_estimator = estimator_cls(
+                n_estimators=self.config.n_estimators,
+                learning_rate=self.config.learning_rate,
+                max_depth=self.config.max_depth,
+                min_samples_split=self.config.min_samples_split,
+                min_samples_leaf=self.config.min_samples_leaf,
+                subsample=self.config.subsample,
+                random_state=self.config.seed,
+            )
+            wrapper_cls = getattr(multioutput_module, "MultiOutputRegressor")
+            return wrapper_cls(base_estimator, n_jobs=self.config.n_jobs)
+        if estimator_name == "hist_gradient_boosting":
+            estimator_cls = getattr(ensemble_module, "HistGradientBoostingRegressor")
+            base_estimator = estimator_cls(
+                max_iter=self.config.n_estimators,
+                learning_rate=self.config.learning_rate,
+                max_depth=self.config.max_depth,
+                max_leaf_nodes=self.config.max_leaf_nodes,
+                min_samples_leaf=self.config.min_samples_leaf,
+                l2_regularization=self.config.l2_regularization,
+                random_state=self.config.seed,
+            )
+            wrapper_cls = getattr(multioutput_module, "MultiOutputRegressor")
+            return wrapper_cls(base_estimator, n_jobs=self.config.n_jobs)
+        if estimator_name == "ada_boost":
+            estimator_cls = getattr(ensemble_module, "AdaBoostRegressor")
+            base_estimator = estimator_cls(
+                n_estimators=self.config.n_estimators,
+                learning_rate=self.config.learning_rate,
+                random_state=self.config.seed,
+            )
+            wrapper_cls = getattr(multioutput_module, "MultiOutputRegressor")
+            return wrapper_cls(base_estimator, n_jobs=self.config.n_jobs)
+        if estimator_name not in {
+            "random_forest",
+            "extra_trees",
+            "gradient_boosting",
+            "hist_gradient_boosting",
+            "ada_boost",
+        }:
             raise ValueError(f"Unsupported estimator_name '{self.config.estimator_name}'.")
-        estimator_cls = getattr(ensemble_module, estimator_map[self.config.estimator_name])
-        return estimator_cls(
-            n_estimators=self.config.n_estimators,
-            max_depth=self.config.max_depth,
-            min_samples_split=self.config.min_samples_split,
-            min_samples_leaf=self.config.min_samples_leaf,
-            max_features=self.config.max_features,
-            bootstrap=self.config.bootstrap,
-            n_jobs=self.config.n_jobs,
-            random_state=self.config.seed,
-        )
+        raise ValueError(f"Unsupported estimator_name '{self.config.estimator_name}'.")
 
     def train_model(self, split_data: dict[str, Any]) -> None:
-        self.model = self.build_estimator()
-        self.model.fit(split_data["x_train_norm"], split_data["y_train_norm"])
+        model = self.build_estimator()
+        if model is None:
+            raise ValueError("Estimator construction failed.")
+        model.fit(split_data["x_train_norm"], split_data["y_train_norm"])
+        self.model = model
 
     def predict(self, x: np.ndarray) -> np.ndarray:
         if self.model is None:
@@ -288,7 +348,7 @@ def main() -> None:
     parser.add_argument("--root", type=Path, default=Path(__file__).resolve().parent, help="Workspace root")
     parser.add_argument(
         "--estimator-name",
-        choices=("random_forest", "extra_trees"),
+        choices=("random_forest", "extra_trees", "gradient_boosting", "hist_gradient_boosting", "ada_boost"),
         default="random_forest",
         help="Ensemble estimator to train",
     )

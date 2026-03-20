@@ -8,7 +8,7 @@ Clone or download this repository, install requirements, then run the CLI by pas
 
 - Multi-model CLI runner: `run_training.py`
 - Advanced framework: `sma_colab_framework.py`
-- Models: `ann`, `cnn`, `resdnn`, `resdnn_v2`, `resdnn_v3`, `transformer`, `xgboost`, `random_forest`, `extra_trees`
+- Models: `ann`, `mlp_tabular`, `cnn`, `resdnn`, `tabular_resnet`, `resdnn_v2`, `resdnn_v3`, `transformer`, `xgboost`, `random_forest`, `extra_trees`, `gradient_boosting`, `hist_gradient_boosting`, `ada_boost`
 - Visualization helper: `visualize_trained_ann_results.py`
 
 ## Data path
@@ -50,15 +50,9 @@ Use this if you want to train directly in Colab.
 2. Set `Runtime` -> `Change runtime type` -> `GPU` if available
 3. Run the setup cells below
 
-Clone from GitHub inside Colab:
+Recommended: use Google Drive if this repository is private or if `git clone` asks for a GitHub username/password.
 
-```python
-!git clone https://github.com/hongphuc-git/AI_apply_for_SMA_Materials.git
-%cd /content/AI_apply_for_SMA_Materials
-!python -m pip install -r requirements.txt
-```
-
-Or use Google Drive if your bundle and data are already stored there:
+Use Google Drive:
 
 ```python
 from google.colab import drive
@@ -66,6 +60,24 @@ drive.mount('/content/drive')
 %cd /content/drive/MyDrive/AI_apply_for_SMA_Materials
 !python -m pip install -r requirements.txt
 ```
+
+Or upload a ZIP file manually to Colab and extract it:
+
+```python
+!unzip -q /content/AI_apply_for_SMA_Materials.zip -d /content/
+%cd /content/AI_apply_for_SMA_Materials
+!python -m pip install -r requirements.txt
+```
+
+If the GitHub repository is public and accessible, you can still clone it directly:
+
+```python
+!git clone https://github.com/hongphuc-git/AI_apply_for_SMA_Materials.git
+%cd /content/AI_apply_for_SMA_Materials
+!python -m pip install -r requirements.txt
+```
+
+If `git clone` fails, do not continue with `%cd /content/AI_apply_for_SMA_Materials` yet. Use the Google Drive or ZIP workflow above first.
 
 Example training command in Colab:
 
@@ -203,10 +215,47 @@ python visualize_trained_ann_results.py --output-dir <path-to-save-results>/resd
 ## Suggested models
 
 - `resdnn_v3`: best default if you care about stable validation and target `C`
+- `tabular_resnet`: good built-in tabular residual model for structured SMA features
+- `mlp_tabular`: wider MLP baseline for tabular-style inputs
 - `resdnn_v2`: simpler stable residual model
+- `resdnn`: lighter residual baseline if you want a smaller starting point
+- `cnn`: useful when your inputs behave like structured grids or image-like maps
+- `ann`: simple fully connected baseline for compact tabular-style features
 - `xgboost`: strong non-neural baseline
+- `hist_gradient_boosting`: fast boosted-tree option for larger tabular datasets
+- `gradient_boosting` / `ada_boost`: additional classical tabular boosting baselines
 - `transformer`: sequence-style alternative
 - `random_forest` / `extra_trees`: quick baselines
+
+## Possible extensions
+
+This bundle is currently documented for supervised SMA regression, but the same data-to-output workflow can also be used as a reference when adapting the project to other ML settings.
+
+### Models you can also explore
+
+- Built in now: `ann`, `mlp_tabular`, `resdnn`, `tabular_resnet`, `resdnn_v2`, `resdnn_v3`, `xgboost`, `random_forest`, `extra_trees`, `gradient_boosting`, `hist_gradient_boosting`, `ada_boost`
+- `cnn` / `transformer`: useful if your SMA inputs are treated as ordered sequences, spatial maps, or time-frequency representations
+- `ann` / `mlp_tabular`: suitable for compact engineered features or reduced latent vectors
+- `resdnn`, `tabular_resnet`, `resdnn_v2`, `resdnn_v3`: good candidates when you want deeper residual backbones for harder nonlinear mappings
+- `xgboost`, `random_forest`, `extra_trees`, `gradient_boosting`, `hist_gradient_boosting`, `ada_boost`: practical tabular baselines for comparing neural and non-neural performance
+
+For tabular data specifically, many current workflows also consider external models such as:
+
+- `LightGBM`: strong gradient-boosted tree baseline for structured tables
+- `CatBoost`: often effective when categorical features or mixed tabular signals are involved
+- `TabNet`: deep tabular model with feature selection-style attention
+- `FT-Transformer`: transformer-style architecture designed for tabular inputs
+
+These models are not implemented in this bundle by default, but they are reasonable next steps if you want to expand beyond the current built-in models.
+
+### Applying the workflow to flow matching
+
+If you want to extend the project toward flow matching, this repository can be used mainly as a workflow reference, not as a ready-made flow-matching implementation.
+
+- Reuse the same ideas for dataset paths, training outputs, experiment tags, and saved result folders
+- Replace the current regression target with the quantity needed by flow matching, such as velocity, drift, or trajectory-related supervision
+- Start from `ann`, `cnn`, `resdnn`, or `transformer` as backbone candidates depending on whether your inputs are tabular, spatial, or sequential
+- Keep `xgboost` or tree models as simple non-generative baselines for comparison tasks, but they are not typical backbones for flow matching itself
 
 ## Notes
 
