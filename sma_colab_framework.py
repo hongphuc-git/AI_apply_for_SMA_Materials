@@ -346,6 +346,15 @@ def create_run_dir(root: Path, runs_root: str, model_name: str, tag: str | None)
     return run_dir
 
 
+def path_relative_to_root_if_possible(path: Path, root: Path) -> Path:
+    resolved_root = root.expanduser().resolve(strict=False)
+    resolved_path = path.expanduser().resolve(strict=False)
+    try:
+        return resolved_path.relative_to(resolved_root)
+    except ValueError:
+        return resolved_path
+
+
 def write_run_manifest(run_dir: Path, model_name: str, config: Any, overrides: dict[str, Any]) -> None:
     payload = {
         "model": model_name,
@@ -475,7 +484,7 @@ def run_experiment(
 
     trainer_cls = model_spec["trainer_cls"]
     if model_name == "xgboost":
-        config.output_dir_name = str(run_dir.relative_to(root))
+        config.output_dir_name = str(path_relative_to_root_if_possible(run_dir, root))
         trainer = trainer_cls(root, config)
     else:
         trainer = trainer_cls(root, config, run_dir)
@@ -526,10 +535,11 @@ def optimize_experiment(
         merged_overrides = dict(fixed_overrides)
         merged_overrides.update(sampled_overrides)
         trial_tag = f"trial-{trial.number:03d}"
+        trial_runs_root = path_relative_to_root_if_possible(trials_dir, root)
         run_dir = run_experiment(
             model_name=model_name,
             root=root,
-            runs_root=str(trials_dir.relative_to(root)),
+            runs_root=str(trial_runs_root),
             tag=trial_tag,
             overrides=merged_overrides,
         )
