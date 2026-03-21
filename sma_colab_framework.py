@@ -5,7 +5,7 @@ import csv
 import importlib
 import json
 import re
-from dataclasses import asdict
+from dataclasses import asdict, dataclass, field
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Callable
@@ -115,16 +115,39 @@ class TimestampedTransformerTrainer(SMATransformerTrainer):
 TrainerFactory = Callable[[Path, Any, Path], Any]
 
 
-MODEL_REGISTRY: dict[str, dict[str, Any]] = {
+@dataclass(frozen=True)
+class ModelSpec:
+    name: str
+    config_cls: type[Any]
+    trainer_cls: type[Any]
+    description: str
+    task_family: str
+    supports_train_optimizer: bool = True
+    base_overrides: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
+class SearchStrategySpec:
+    name: str
+    description: str
+    sampler_factory_name: str | None
+    requires_search_space: bool = True
+
+
+MODEL_SPEC_DEFINITIONS: dict[str, dict[str, Any]] = {
     "ann": {
+        "name": "ann",
         "config_cls": SMAAnnConfig,
         "trainer_cls": TimestampedANNTrainer,
         "description": "Baseline weighted DNN/MLP trainer",
+        "task_family": "neural",
     },
     "mlp_tabular": {
+        "name": "mlp_tabular",
         "config_cls": SMAAnnConfig,
         "trainer_cls": TimestampedANNTrainer,
         "description": "Wider MLP tuned for tabular-style SMA features",
+        "task_family": "neural",
         "base_overrides": {
             "hidden_layers": (768, 384, 192, 96),
             "dropout": 0.08,
@@ -135,19 +158,25 @@ MODEL_REGISTRY: dict[str, dict[str, Any]] = {
         },
     },
     "cnn": {
+        "name": "cnn",
         "config_cls": SMACNNConfig,
         "trainer_cls": TimestampedCNNTrainer,
         "description": "1D CNN over stress curve plus rate feature",
+        "task_family": "neural",
     },
     "resdnn": {
+        "name": "resdnn",
         "config_cls": SMAResidualDNNConfig,
         "trainer_cls": TimestampedResidualDNNTrainer,
         "description": "Residual DNN baseline with MLP residual blocks",
+        "task_family": "neural",
     },
     "tabular_resnet": {
+        "name": "tabular_resnet",
         "config_cls": SMAResidualDNNConfig,
         "trainer_cls": TimestampedResidualDNNTrainer,
         "description": "Residual tabular network tuned for structured SMA features",
+        "task_family": "neural",
         "base_overrides": {
             "hidden_layers": (640, 320),
             "block_width": 320,
@@ -159,41 +188,59 @@ MODEL_REGISTRY: dict[str, dict[str, Any]] = {
         },
     },
     "resdnn_v2": {
+        "name": "resdnn_v2",
         "config_cls": SMAResidualDNNV2Config,
         "trainer_cls": TimestampedResidualDNNV2Trainer,
         "description": "Deeper stable residual DNN with pre-norm blocks and warmup-cosine schedule",
+        "task_family": "neural",
     },
     "resdnn_v3": {
+        "name": "resdnn_v3",
         "config_cls": SMAResidualDNNV3Config,
         "trainer_cls": TimestampedResidualDNNV3Trainer,
         "description": "Stable residual DNN v3 with C-specialized head and EMA-smoothed validation",
+        "task_family": "neural",
     },
     "xgboost": {
+        "name": "xgboost",
         "config_cls": SMAXGBoostConfig,
         "trainer_cls": SMAXGBoostTrainer,
         "description": "Per-target XGBoost baseline",
+        "task_family": "tree",
+        "supports_train_optimizer": False,
     },
     "transformer": {
+        "name": "transformer",
         "config_cls": SMATransformerConfig,
         "trainer_cls": TimestampedTransformerTrainer,
         "description": "Patch-based Transformer over stress sequence with optional checkpoint fine-tuning",
+        "task_family": "neural",
     },
     "random_forest": {
+        "name": "random_forest",
         "config_cls": SMASklearnEnsembleConfig,
         "trainer_cls": TimestampedSklearnEnsembleTrainer,
         "description": "Random forest multi-output baseline",
+        "task_family": "tree",
+        "supports_train_optimizer": False,
         "base_overrides": {"estimator_name": "random_forest", "output_dir_name": "python_random_forest_outputs"},
     },
     "extra_trees": {
+        "name": "extra_trees",
         "config_cls": SMASklearnEnsembleConfig,
         "trainer_cls": TimestampedSklearnEnsembleTrainer,
         "description": "Extra trees multi-output baseline",
+        "task_family": "tree",
+        "supports_train_optimizer": False,
         "base_overrides": {"estimator_name": "extra_trees", "output_dir_name": "python_extra_trees_outputs"},
     },
     "gradient_boosting": {
+        "name": "gradient_boosting",
         "config_cls": SMASklearnEnsembleConfig,
         "trainer_cls": TimestampedSklearnEnsembleTrainer,
         "description": "Gradient boosting tabular baseline wrapped for multi-output regression",
+        "task_family": "tree",
+        "supports_train_optimizer": False,
         "base_overrides": {
             "estimator_name": "gradient_boosting",
             "output_dir_name": "python_gradient_boosting_outputs",
@@ -204,9 +251,12 @@ MODEL_REGISTRY: dict[str, dict[str, Any]] = {
         },
     },
     "hist_gradient_boosting": {
+        "name": "hist_gradient_boosting",
         "config_cls": SMASklearnEnsembleConfig,
         "trainer_cls": TimestampedSklearnEnsembleTrainer,
         "description": "Histogram gradient boosting baseline for larger tabular datasets",
+        "task_family": "tree",
+        "supports_train_optimizer": False,
         "base_overrides": {
             "estimator_name": "hist_gradient_boosting",
             "output_dir_name": "python_hist_gradient_boosting_outputs",
@@ -217,9 +267,12 @@ MODEL_REGISTRY: dict[str, dict[str, Any]] = {
         },
     },
     "ada_boost": {
+        "name": "ada_boost",
         "config_cls": SMASklearnEnsembleConfig,
         "trainer_cls": TimestampedSklearnEnsembleTrainer,
         "description": "AdaBoost baseline for lightweight tabular comparison runs",
+        "task_family": "tree",
+        "supports_train_optimizer": False,
         "base_overrides": {
             "estimator_name": "ada_boost",
             "output_dir_name": "python_ada_boost_outputs",
@@ -227,6 +280,27 @@ MODEL_REGISTRY: dict[str, dict[str, Any]] = {
             "learning_rate": 0.05,
         },
     },
+}
+
+MODEL_REGISTRY: dict[str, ModelSpec] = {name: ModelSpec(**spec) for name, spec in MODEL_SPEC_DEFINITIONS.items()}
+
+SEARCH_STRATEGY_REGISTRY: dict[str, SearchStrategySpec] = {
+    "none": SearchStrategySpec(
+        name="none",
+        description="Run a single experiment without hyperparameter search",
+        sampler_factory_name=None,
+        requires_search_space=False,
+    ),
+    "optuna-tpe": SearchStrategySpec(
+        name="optuna-tpe",
+        description="Optuna TPE sampler for Bayesian-style search",
+        sampler_factory_name="TPESampler",
+    ),
+    "optuna-random": SearchStrategySpec(
+        name="optuna-random",
+        description="Optuna random sampler for baseline search",
+        sampler_factory_name="RandomSampler",
+    ),
 }
 
 
@@ -370,8 +444,8 @@ def get_model_config(model_name: str, overrides: dict[str, Any] | None = None) -
     if model_name not in MODEL_REGISTRY:
         raise KeyError(f"Unsupported model '{model_name}'. Choose from: {sorted(MODEL_REGISTRY)}")
     model_spec = MODEL_REGISTRY[model_name]
-    config = model_spec["config_cls"]()
-    merged_overrides: dict[str, Any] = dict(model_spec.get("base_overrides", {}))
+    config = model_spec.config_cls()
+    merged_overrides: dict[str, Any] = dict(model_spec.base_overrides)
     if overrides:
         merged_overrides.update(overrides)
     apply_overrides(config, merged_overrides)
@@ -412,6 +486,19 @@ def load_search_space(model_name: str, search_space_json: str | None, search_spa
     if not search_space:
         raise ValueError(f"No search space is defined for model '{model_name}'.")
     return search_space
+
+
+def get_search_strategy(strategy_name: str) -> SearchStrategySpec:
+    if strategy_name not in SEARCH_STRATEGY_REGISTRY:
+        raise KeyError(f"Unsupported search strategy '{strategy_name}'. Choose from: {sorted(SEARCH_STRATEGY_REGISTRY)}")
+    return SEARCH_STRATEGY_REGISTRY[strategy_name]
+
+
+def create_optuna_sampler(optuna_module: Any, strategy: SearchStrategySpec) -> Any:
+    if strategy.sampler_factory_name is None:
+        return None
+    sampler_cls = getattr(optuna_module.samplers, strategy.sampler_factory_name)
+    return sampler_cls(seed=42)
 
 
 def write_trials_csv(output_file: Path, rows: list[dict[str, Any]]) -> None:
@@ -474,15 +561,23 @@ def run_experiment(
         raise KeyError(f"Unsupported model '{model_name}'. Choose from: {sorted(MODEL_REGISTRY)}")
 
     model_spec = MODEL_REGISTRY[model_name]
-    merged_overrides: dict[str, Any] = dict(model_spec.get("base_overrides", {}))
+    merged_overrides: dict[str, Any] = dict(model_spec.base_overrides)
     if overrides:
         merged_overrides.update(overrides)
     config = get_model_config(model_name, merged_overrides)
 
-    run_dir = create_run_dir(root, runs_root, model_name, tag)
+    resume_from_dir = merged_overrides.get("resume_from_dir")
+    if resume_from_dir and model_spec.task_family != "neural":
+        raise ValueError("Checkpoint resume is currently supported for neural/PyTorch models only.")
+
+    if isinstance(resume_from_dir, str) and resume_from_dir.strip():
+        run_dir = Path(resume_from_dir).expanduser().resolve()
+        run_dir.mkdir(parents=True, exist_ok=True)
+    else:
+        run_dir = create_run_dir(root, runs_root, model_name, tag)
     write_run_manifest(run_dir, model_name, config, merged_overrides)
 
-    trainer_cls = model_spec["trainer_cls"]
+    trainer_cls = model_spec.trainer_cls
     if model_name == "xgboost":
         config.output_dir_name = str(path_relative_to_root_if_possible(run_dir, root))
         trainer = trainer_cls(root, config)
@@ -495,7 +590,7 @@ def run_experiment(
 
 def print_models() -> None:
     for model_name, spec in MODEL_REGISTRY.items():
-        print(f"- {model_name}: {spec['description']}")
+        print(f"- {model_name}: {spec.description}")
 
 
 def optimize_experiment(
@@ -510,6 +605,7 @@ def optimize_experiment(
     metric_path: str,
     direction: str,
 ) -> Path:
+    strategy = get_search_strategy(optimizer_name)
     try:
         optuna = importlib.import_module("optuna")
     except ImportError as exc:
@@ -521,12 +617,7 @@ def optimize_experiment(
     trials_dir = sweep_dir / "trials"
     trials_dir.mkdir(exist_ok=True)
 
-    if optimizer_name == "optuna-tpe":
-        sampler = optuna.samplers.TPESampler(seed=42)
-    elif optimizer_name == "optuna-random":
-        sampler = optuna.samplers.RandomSampler(seed=42)
-    else:
-        raise ValueError(f"Unsupported optimizer '{optimizer_name}'.")
+    sampler = create_optuna_sampler(optuna, strategy)
 
     trial_rows: list[dict[str, Any]] = []
 
@@ -535,6 +626,10 @@ def optimize_experiment(
         merged_overrides = dict(fixed_overrides)
         merged_overrides.update(sampled_overrides)
         trial_tag = f"trial-{trial.number:03d}"
+        print(
+            f"Starting BO trial {trial.number + 1}/{n_trials} | "
+            f"trial_id={trial.number:03d} | params={json.dumps(sampled_overrides, sort_keys=True)}"
+        )
         trial_runs_root = path_relative_to_root_if_possible(trials_dir, root)
         run_dir = run_experiment(
             model_name=model_name,
@@ -552,6 +647,10 @@ def optimize_experiment(
                 "run_dir": str(run_dir),
                 **sampled_overrides,
             }
+        )
+        print(
+            f"Finished BO trial {trial.number + 1}/{n_trials} | "
+            f"score={score:.6g} | run_dir={run_dir}"
         )
         return score
 
@@ -583,9 +682,9 @@ def main() -> None:
     parser.add_argument("--model", choices=sorted(MODEL_REGISTRY), default="ann", help="Model to train")
     parser.add_argument(
         "--optimizer",
-        choices=("none", "optuna-tpe", "optuna-random"),
+        choices=sorted(SEARCH_STRATEGY_REGISTRY),
         default="none",
-        help="Single run or hyperparameter optimization backend",
+        help="Search strategy registry entry for single run or hyperparameter optimization",
     )
     parser.add_argument("--runs-root", type=str, default="colab_runs", help="Directory for timestamped run outputs")
     parser.add_argument("--tag", type=str, default=None, help="Optional run tag appended to the run name")

@@ -30,6 +30,8 @@ Built-in models:
 - `hist_gradient_boosting`
 - `ada_boost`
 
+The training entrypoint now uses a registry-based framework internally: model selection comes from the model registry, and search backends such as `none`, `optuna-tpe`, and `optuna-random` come from a separate search-strategy registry so the framework can be extended more cleanly.
+
 ## Data path
 
 You only need to provide your data folder path with `--data-dir`.
@@ -193,6 +195,22 @@ For optimizers that use momentum:
 
 ```bash
 python run_training.py --model mlp_tabular --data-dir <path-to-data-folder> --runs-root <path-to-save-results> --train-optimizer sgd --optimizer-momentum 0.9 --learning-rate 0.0005
+```
+
+### Resume from checkpoint after interruption
+
+Neural models now save `checkpoint_latest.pt` and `checkpoint_best.pt` in the run folder. If training crashes or stops early, resume with:
+
+```bash
+python run_training.py --model resdnn_v3 --data-dir <path-to-data-folder> --resume-from <existing-run-folder>
+```
+
+The trainer now auto-resumes whenever `checkpoint_latest.pt` already exists in the selected run folder.
+
+To control checkpoint frequency directly from the CLI:
+
+```bash
+python run_training.py --model resdnn_v3 --data-dir <path-to-data-folder> --runs-root <path-to-save-results> --checkpoint-every-epochs 5
 ```
 
 ### JSON file

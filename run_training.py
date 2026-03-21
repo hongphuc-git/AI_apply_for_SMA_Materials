@@ -6,6 +6,7 @@ from pathlib import Path
 
 from sma_colab_framework import (
     MODEL_REGISTRY,
+    SEARCH_STRATEGY_REGISTRY,
     load_overrides,
     load_search_space,
     optimize_experiment,
@@ -34,6 +35,8 @@ def collect_cli_overrides(args: argparse.Namespace) -> dict[str, object]:
         "c_loss_weight": args.c_loss_weight,
         "optimizer_name": args.train_optimizer,
         "optimizer_momentum": args.optimizer_momentum,
+        "checkpoint_every_epochs": args.checkpoint_every_epochs,
+        "resume_from_dir": str(args.resume_from.resolve()) if args.resume_from is not None else None,
     }
     return {key: value for key, value in override_map.items() if value is not None}
 
@@ -45,12 +48,14 @@ def main() -> None:
     parser.add_argument("--model", choices=sorted(MODEL_REGISTRY), default="resdnn_v3", help="Model to train")
     parser.add_argument(
         "--optimizer",
-        choices=("none", "optuna-tpe", "optuna-random"),
+        choices=sorted(SEARCH_STRATEGY_REGISTRY),
         default="none",
-        help="Single-run or hyperparameter optimization backend",
+        help="Search strategy registry entry for single-run or hyperparameter optimization",
     )
     parser.add_argument("--runs-root", type=str, default="runs", help="Directory for timestamped outputs")
+    parser.add_argument("--resume-from", type=Path, default=None, help="Resume training from an existing run directory containing checkpoint_latest.pt")
     parser.add_argument("--tag", type=str, default=None, help="Optional run tag")
+    parser.add_argument("--checkpoint-every-epochs", type=int, default=None, help="Save checkpoint_latest.pt every N epochs")
     parser.add_argument("--epochs", type=int, default=None, help="Direct override for training epochs")
     parser.add_argument("--learning-rate", type=float, default=None, help="Direct override for learning rate")
     parser.add_argument("--batch-size", type=int, default=None, help="Direct override for batch size")

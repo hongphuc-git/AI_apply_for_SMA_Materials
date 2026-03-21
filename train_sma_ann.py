@@ -40,6 +40,8 @@ class SMAAnnConfig:
     optimizer_betas: tuple[float, float] = (0.9, 0.999)
     optimizer_momentum: float = 0.9
     rmsprop_alpha: float = 0.99
+    checkpoint_every_epochs: int = 1
+    resume_from_dir: str | None = None
     c_loss_weight: float = 2.8
     loss_name: str = "mse"
     huber_delta: float = 0.03
@@ -151,7 +153,9 @@ def summarize_split_shapes(split_data: dict[str, Any]) -> dict[str, Any]:
         "test_samples": int(split_data["x_test"].shape[0]),
         "feature_dim": int(split_data["x_train_norm"].shape[1]),
         "target_dim": int(split_data["y_train_norm"].shape[1]),
-        "rate_summary": format_rate_levels(np.concatenate([split_data["rate_train"], split_data["rate_val"], split_data["rate_test"]])),
+        "rate_summary": format_rate_levels(
+            np.concatenate([split_data["rate_train"], split_data["rate_val"], split_data["rate_test"]])
+        ),
     }
 
 
@@ -203,49 +207,26 @@ def count_model_parameters(model: nn.Module) -> tuple[int, int]:
     return total, trainable
 
 
+def move_optimizer_state_to_device(optimizer: torch.optim.Optimizer, device: torch.device) -> None:
+    for state in optimizer.state.values():
+        for key, value in state.items():
+            if isinstance(value, torch.Tensor):
+                state[key] = value.to(device)
+
+
 def create_torch_optimizer(parameters: Any, config: SMAAnnConfig) -> torch.optim.Optimizer:
     optimizer_name = str(config.optimizer_name).lower()
     if optimizer_name == "adamw":
-        return torch.optim.AdamW(
-            parameters,
-            lr=config.learning_rate,
-            weight_decay=config.weight_decay,
-            betas=config.optimizer_betas,
-        )
+        return torch.optim.AdamW(parameters, lr=config.learning_rate, weight_decay=config.weight_decay, betas=config.optimizer_betas)
     if optimizer_name == "adam":
-        return torch.optim.Adam(
-            parameters,
-            lr=config.learning_rate,
-            weight_decay=config.weight_decay,
-            betas=config.optimizer_betas,
-        )
+        return torch.optim.Adam(parameters, lr=config.learning_rate, weight_decay=config.weight_decay, betas=config.optimizer_betas)
     if optimizer_name == "nadam":
-        return torch.optim.NAdam(
-            parameters,
-            lr=config.learning_rate,
-            weight_decay=config.weight_decay,
-            betas=config.optimizer_betas,
-        )
+        return torch.optim.NAdam(parameters, lr=config.learning_rate, weight_decay=config.weight_decay, betas=config.optimizer_betas)
     if optimizer_name == "rmsprop":
-        return torch.optim.RMSprop(
-            parameters,
-            lr=config.learning_rate,
-            weight_decay=config.weight_decay,
-            momentum=config.optimizer_momentum,
-            alpha=config.rmsprop_alpha,
-        )
+        return torch.optim.RMSprop(parameters, lr=config.learning_rate, weight_decay=config.weight_decay, momentum=config.optimizer_momentum, alpha=config.rmsprop_alpha)
     if optimizer_name == "sgd":
-        return torch.optim.SGD(
-            parameters,
-            lr=config.learning_rate,
-            weight_decay=config.weight_decay,
-            momentum=config.optimizer_momentum,
-            nesterov=config.optimizer_momentum > 0,
-        )
-    raise ValueError(
-        "Unsupported optimizer_name "
-        f"'{config.optimizer_name}'. Choose from: adamw, adam, nadam, rmsprop, sgd"
-    )
+        return torch.optim.SGD(parameters, lr=config.learning_rate, weight_decay=config.weight_decay, momentum=config.optimizer_momentum, nesterov=config.optimizer_momentum > 0)
+    raise ValueError(f"Unsupported optimizer_name '{config.optimizer_name}'. Choose from: adamw, adam, nadam, rmsprop, sgd")
 
 
 class MatDatasetLoader:
@@ -254,15 +235,11 @@ class MatDatasetLoader:
         self.config = config
 
     def find_data_dir(self) -> Path:
-        if self.config.explicit_data_dir is not None:
-            explicit_dir = Path(self.config.explicit_data_dir)
-            if not explicit_dir.is_absolute():
-                explicit_dir = (self.root / explicit_dir).resolve()
+        if self.config.explicit_data_dir:
+            explicit_dir = Path(self.config.explicit_data_dir).expanduser()
             if (explicit_dir / "train.mat").is_file() and (explicit_dir / "test.mat").is_file():
                 return explicit_dir
-            raise FileNotFoundError(
-                f"explicit_data_dir does not contain train.mat/test.mat: {explicit_dir}"
-            )
+            raise FileNotFoundError(f"explicit_data_dir does not contain train.mat/test.mat: {explicit_dir}")
         for relative_dir in self.config.candidate_data_dirs:
             data_dir = self.root / relative_dir
             if (data_dir / "train.mat").is_file() and (data_dir / "test.mat").is_file():
@@ -436,6 +413,12 @@ class SMAAnnTrainer:
         self.save_plots(artifacts)
         self.print_summary(artifacts)
 
+    def latest_checkpoint_path(self) -> Path:
+        return self.output_dir / "checkpoint_latest.pt"
+
+    def best_checkpoint_path(self) -> Path:
+        return self.output_dir / "checkpoint_best.pt"
+
     def print_run_overview(self, split_data: dict[str, Any]) -> None:
         total_params, trainable_params = count_model_parameters(self.model)
         shape_summary = summarize_split_shapes(split_data)
@@ -446,30 +429,104 @@ class SMAAnnTrainer:
         print("  Data files         : train.mat + test.mat")
         print(f"  Input format       : X + rate -> {shape_summary['feature_dim']} features per sample")
         print(f"  Target format      : Y -> {shape_summary['target_dim']} regression targets {self.config.label_names}")
-        print(
-            f"  Dataset split      : train={shape_summary['train_samples']}, "
-            f"val={shape_summary['val_samples']}, test={shape_summary['test_samples']}"
-        )
+        print(f"  Dataset split      : train={shape_summary['train_samples']}, val={shape_summary['val_samples']}, test={shape_summary['test_samples']}")
         print(f"  Rate coverage      : {shape_summary['rate_summary']}")
         print(f"  Device             : {build_device_summary(self.device)}")
         print(f"  Model              : {self.model.__class__.__name__}")
         print(f"  Parameters         : total={total_params:,}, trainable={trainable_params:,}")
-        print(
-            "  Config             : "
-            f"epochs={self.config.epochs}, batch_size={self.config.batch_size}, "
-            f"lr={self.config.learning_rate:g}, optimizer={self.config.optimizer_name}"
-        )
+        print(f"  Config             : epochs={self.config.epochs}, batch_size={self.config.batch_size}, lr={self.config.learning_rate:g}, optimizer={self.config.optimizer_name}")
         print(f"  Steps              : {steps_per_epoch} per epoch, {total_steps} total")
-        print(
-            "  Time estimate      : "
-            + estimate_runtime_band(total_steps, shape_summary["train_samples"], shape_summary["feature_dim"], total_params, self.device.type)
-        )
-        print(
-            "  Hardware fit       : "
-            + build_hardware_fit_note(self.device, int(self.config.batch_size), int(self.config.epochs), total_params)
-        )
+        print("  Time estimate      : " + estimate_runtime_band(total_steps, shape_summary["train_samples"], shape_summary["feature_dim"], total_params, self.device.type))
+        print("  Hardware fit       : " + build_hardware_fit_note(self.device, int(self.config.batch_size), int(self.config.epochs), total_params))
+        resume_checkpoint = self.find_resume_checkpoint_path()
+        if resume_checkpoint is not None:
+            print(f"  Resume mode        : auto-resume from {resume_checkpoint}")
         print("  Architecture")
         print(self.model)
+
+    def find_resume_checkpoint_path(self) -> Path | None:
+        checkpoint_path = self.latest_checkpoint_path()
+        if checkpoint_path.is_file():
+            return checkpoint_path
+        if self.config.resume_from_dir:
+            print(f"Resume requested but checkpoint not found: {checkpoint_path}")
+        return None
+
+    def build_checkpoint_payload(
+        self,
+        epoch: int,
+        optimizer: torch.optim.Optimizer,
+        scheduler: Any,
+        best_val_loss: float,
+        best_state: dict[str, torch.Tensor] | None,
+        epochs_without_improvement: int,
+        extra_state: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        return {
+            "epoch": epoch,
+            "model_state_dict": self.model.state_dict(),
+            "optimizer_state_dict": optimizer.state_dict(),
+            "scheduler_state_dict": None if scheduler is None else scheduler.state_dict(),
+            "best_val_loss": best_val_loss,
+            "best_state_dict": best_state,
+            "epochs_without_improvement": epochs_without_improvement,
+            "history": self.history,
+            "config": asdict(self.config),
+            "input_normalizer": self.input_normalizer.to_dict(),
+            "target_normalizer": self.target_normalizer.to_dict(),
+            "extra_state": extra_state or {},
+        }
+
+    def save_training_checkpoint(
+        self,
+        epoch: int,
+        optimizer: torch.optim.Optimizer,
+        scheduler: Any,
+        best_val_loss: float,
+        best_state: dict[str, torch.Tensor] | None,
+        epochs_without_improvement: int,
+        extra_state: dict[str, Any] | None = None,
+    ) -> None:
+        torch.save(
+            self.build_checkpoint_payload(epoch, optimizer, scheduler, best_val_loss, best_state, epochs_without_improvement, extra_state),
+            self.latest_checkpoint_path(),
+        )
+
+    def save_best_checkpoint(
+        self,
+        epoch: int,
+        optimizer: torch.optim.Optimizer,
+        scheduler: Any,
+        best_val_loss: float,
+        best_state: dict[str, torch.Tensor],
+        epochs_without_improvement: int,
+        extra_state: dict[str, Any] | None = None,
+    ) -> None:
+        payload = self.build_checkpoint_payload(epoch, optimizer, scheduler, best_val_loss, best_state, epochs_without_improvement, extra_state)
+        payload["model_state_dict"] = best_state
+        torch.save(payload, self.best_checkpoint_path())
+
+    def load_training_checkpoint(self) -> dict[str, Any] | None:
+        checkpoint_path = self.find_resume_checkpoint_path()
+        if checkpoint_path is None:
+            return None
+        return torch.load(checkpoint_path, map_location=self.device)
+
+    def restore_training_state(self, checkpoint_payload: dict[str, Any], optimizer: torch.optim.Optimizer, scheduler: Any) -> dict[str, Any]:
+        self.model.load_state_dict(checkpoint_payload["model_state_dict"])
+        optimizer.load_state_dict(checkpoint_payload["optimizer_state_dict"])
+        move_optimizer_state_to_device(optimizer, self.device)
+        scheduler_state_dict = checkpoint_payload.get("scheduler_state_dict")
+        if scheduler is not None and scheduler_state_dict is not None:
+            scheduler.load_state_dict(scheduler_state_dict)
+        self.history = checkpoint_payload.get("history", {"train_loss": [], "val_loss": []})
+        return {
+            "start_epoch": int(checkpoint_payload.get("epoch", 0)) + 1,
+            "best_val_loss": float(checkpoint_payload.get("best_val_loss", float("inf"))),
+            "best_state": checkpoint_payload.get("best_state_dict"),
+            "epochs_without_improvement": int(checkpoint_payload.get("epochs_without_improvement", 0)),
+            "extra_state": checkpoint_payload.get("extra_state", {}),
+        }
 
     def prepare_datasets(self, train_raw: dict[str, np.ndarray], test_raw: dict[str, np.ndarray]) -> dict[str, Any]:
         x_train_all = train_raw["X"].astype(np.float64)
@@ -564,7 +621,21 @@ class SMAAnnTrainer:
         best_val_loss = float("inf")
         best_state: dict[str, torch.Tensor] | None = None
         epochs_without_improvement = 0
-        for epoch in range(1, self.config.epochs + 1):
+        start_epoch = 1
+        checkpoint_payload = self.load_training_checkpoint()
+        if checkpoint_payload is not None:
+            restored = self.restore_training_state(checkpoint_payload, optimizer, scheduler)
+            start_epoch = restored["start_epoch"]
+            best_val_loss = restored["best_val_loss"]
+            best_state = restored["best_state"]
+            epochs_without_improvement = restored["epochs_without_improvement"]
+            completed_epoch = max(start_epoch - 1, 0)
+            print(
+                f"Resuming training from epoch {start_epoch} "
+                f"(last completed epoch={completed_epoch}, best_val_loss={best_val_loss:.6e}, "
+                f"patience_counter={epochs_without_improvement})."
+            )
+        for epoch in range(start_epoch, self.config.epochs + 1):
             self.model.train()
             train_loss_sum = 0.0
             train_count = 0
@@ -601,6 +672,26 @@ class SMAAnnTrainer:
                 f"Epoch {epoch:3d}/{self.config.epochs:3d} | "
                 f"train_loss={train_loss:.6e} | val_loss={val_loss:.6e} | lr={current_lr:.2e}"
             )
+
+            checkpoint_interval = max(int(self.config.checkpoint_every_epochs), 1)
+            if epoch % checkpoint_interval == 0 or epoch == self.config.epochs:
+                self.save_training_checkpoint(
+                    epoch,
+                    optimizer,
+                    scheduler,
+                    best_val_loss,
+                    best_state,
+                    epochs_without_improvement,
+                )
+            if best_state is not None and abs(best_val_loss - val_loss) <= self.config.early_stopping_min_delta:
+                self.save_best_checkpoint(
+                    epoch,
+                    optimizer,
+                    scheduler,
+                    best_val_loss,
+                    best_state,
+                    epochs_without_improvement,
+                )
 
             if epochs_without_improvement >= self.config.early_stopping_patience:
                 print(

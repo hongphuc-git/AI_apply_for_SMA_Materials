@@ -143,8 +143,27 @@ class SMAResidualDNNV3Trainer(SMAAnnTrainer):
         epochs_without_improvement = 0
         total_epochs = max(self.config.epochs, 1)
         warmup_epochs = max(1, min(self.config.warmup_epochs, total_epochs))
+        start_epoch = 1
 
-        for epoch in range(1, total_epochs + 1):
+        checkpoint_payload = self.load_training_checkpoint()
+        if checkpoint_payload is not None:
+            restored = self.restore_training_state(checkpoint_payload, optimizer, scheduler=None)
+            start_epoch = restored["start_epoch"]
+            best_val_loss = restored["best_val_loss"]
+            best_state = restored["best_state"]
+            epochs_without_improvement = restored["epochs_without_improvement"]
+            extra_state = restored["extra_state"]
+            restored_ema = extra_state.get("ema_state")
+            if isinstance(restored_ema, dict):
+                self.ema_state = {key: value.to(self.device) if isinstance(value, torch.Tensor) else value for key, value in restored_ema.items()}
+            completed_epoch = max(start_epoch - 1, 0)
+            print(
+                f"Resuming training from epoch {start_epoch} "
+                f"(last completed epoch={completed_epoch}, best_val_loss={best_val_loss:.6e}, "
+                f"patience_counter={epochs_without_improvement})."
+            )
+
+        for epoch in range(start_epoch, total_epochs + 1):
             current_lr = self.compute_epoch_lr(epoch, total_epochs, warmup_epochs)
             for param_group in optimizer.param_groups:
                 param_group["lr"] = current_lr
@@ -183,6 +202,29 @@ class SMAResidualDNNV3Trainer(SMAAnnTrainer):
                 f"Epoch {epoch:3d}/{total_epochs:3d} | "
                 f"train_loss={train_loss:.6e} | val_loss={val_loss:.6e} | lr={current_lr:.2e}"
             )
+
+            checkpoint_interval = max(int(self.config.checkpoint_every_epochs), 1)
+            extra_state = {"ema_state": self.ema_state}
+            if epoch % checkpoint_interval == 0 or epoch == total_epochs:
+                self.save_training_checkpoint(
+                    epoch,
+                    optimizer,
+                    scheduler=None,
+                    best_val_loss=best_val_loss,
+                    best_state=best_state,
+                    epochs_without_improvement=epochs_without_improvement,
+                    extra_state=extra_state,
+                )
+            if best_state is not None and abs(best_val_loss - val_loss) <= self.config.early_stopping_min_delta:
+                self.save_best_checkpoint(
+                    epoch,
+                    optimizer,
+                    scheduler=None,
+                    best_val_loss=best_val_loss,
+                    best_state=best_state,
+                    epochs_without_improvement=epochs_without_improvement,
+                    extra_state=extra_state,
+                )
 
             if epochs_without_improvement >= self.config.early_stopping_patience:
                 print(
