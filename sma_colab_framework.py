@@ -15,7 +15,10 @@ from train_sma_cnn import SMACNNConfig, SMACNNTrainer
 from train_sma_resdnn import SMAResidualDNNConfig, SMAResidualDNNTrainer
 from train_sma_resdnn_v2 import SMAResidualDNNV2Config, SMAResidualDNNV2Trainer
 from train_sma_resdnn_v3 import SMAResidualDNNV3Config, SMAResidualDNNV3Trainer
-from train_sma_sklearn_ensemble import SMASklearnEnsembleConfig, SMASklearnEnsembleTrainer
+from train_sma_sklearn_ensemble import (
+    SMASklearnEnsembleConfig,
+    SMASklearnEnsembleTrainer,
+)
 from train_sma_transformer import SMATransformerConfig, SMATransformerTrainer
 from train_sma_xgboost import SMAXGBoostConfig, SMAXGBoostTrainer
 
@@ -26,7 +29,9 @@ def sanitize_tag(tag: str) -> str:
     return cleaned or "run"
 
 
-def build_run_name(model_name: str, timestamp: datetime | None = None, tag: str | None = None) -> str:
+def build_run_name(
+    model_name: str, timestamp: datetime | None = None, tag: str | None = None
+) -> str:
     stamp = (timestamp or datetime.now()).strftime("%Y%m%d_%H%M%S")
     suffix = f"_{sanitize_tag(tag)}" if tag else ""
     return f"{model_name}_{stamp}{suffix}"
@@ -78,35 +83,45 @@ class TimestampedCNNTrainer(SMACNNTrainer):
 
 
 class TimestampedResidualDNNTrainer(SMAResidualDNNTrainer):
-    def __init__(self, root: Path, config: SMAResidualDNNConfig, output_dir: Path) -> None:
+    def __init__(
+        self, root: Path, config: SMAResidualDNNConfig, output_dir: Path
+    ) -> None:
         super().__init__(root, config)
         self.output_dir = output_dir
         self.output_dir.mkdir(parents=True, exist_ok=True)
 
 
 class TimestampedResidualDNNV2Trainer(SMAResidualDNNV2Trainer):
-    def __init__(self, root: Path, config: SMAResidualDNNV2Config, output_dir: Path) -> None:
+    def __init__(
+        self, root: Path, config: SMAResidualDNNV2Config, output_dir: Path
+    ) -> None:
         super().__init__(root, config)
         self.output_dir = output_dir
         self.output_dir.mkdir(parents=True, exist_ok=True)
 
 
 class TimestampedResidualDNNV3Trainer(SMAResidualDNNV3Trainer):
-    def __init__(self, root: Path, config: SMAResidualDNNV3Config, output_dir: Path) -> None:
+    def __init__(
+        self, root: Path, config: SMAResidualDNNV3Config, output_dir: Path
+    ) -> None:
         super().__init__(root, config)
         self.output_dir = output_dir
         self.output_dir.mkdir(parents=True, exist_ok=True)
 
 
 class TimestampedSklearnEnsembleTrainer(SMASklearnEnsembleTrainer):
-    def __init__(self, root: Path, config: SMASklearnEnsembleConfig, output_dir: Path) -> None:
+    def __init__(
+        self, root: Path, config: SMASklearnEnsembleConfig, output_dir: Path
+    ) -> None:
         super().__init__(root, config)
         self.output_dir = output_dir
         self.output_dir.mkdir(parents=True, exist_ok=True)
 
 
 class TimestampedTransformerTrainer(SMATransformerTrainer):
-    def __init__(self, root: Path, config: SMATransformerConfig, output_dir: Path) -> None:
+    def __init__(
+        self, root: Path, config: SMATransformerConfig, output_dir: Path
+    ) -> None:
         super().__init__(root, config)
         self.output_dir = output_dir
         self.output_dir.mkdir(parents=True, exist_ok=True)
@@ -223,7 +238,10 @@ MODEL_SPEC_DEFINITIONS: dict[str, dict[str, Any]] = {
         "description": "Random forest multi-output baseline",
         "task_family": "tree",
         "supports_train_optimizer": False,
-        "base_overrides": {"estimator_name": "random_forest", "output_dir_name": "python_random_forest_outputs"},
+        "base_overrides": {
+            "estimator_name": "random_forest",
+            "output_dir_name": "python_random_forest_outputs",
+        },
     },
     "extra_trees": {
         "name": "extra_trees",
@@ -232,7 +250,10 @@ MODEL_SPEC_DEFINITIONS: dict[str, dict[str, Any]] = {
         "description": "Extra trees multi-output baseline",
         "task_family": "tree",
         "supports_train_optimizer": False,
-        "base_overrides": {"estimator_name": "extra_trees", "output_dir_name": "python_extra_trees_outputs"},
+        "base_overrides": {
+            "estimator_name": "extra_trees",
+            "output_dir_name": "python_extra_trees_outputs",
+        },
     },
     "gradient_boosting": {
         "name": "gradient_boosting",
@@ -282,7 +303,9 @@ MODEL_SPEC_DEFINITIONS: dict[str, dict[str, Any]] = {
     },
 }
 
-MODEL_REGISTRY: dict[str, ModelSpec] = {name: ModelSpec(**spec) for name, spec in MODEL_SPEC_DEFINITIONS.items()}
+MODEL_REGISTRY: dict[str, ModelSpec] = {
+    name: ModelSpec(**spec) for name, spec in MODEL_SPEC_DEFINITIONS.items()
+}
 
 SEARCH_STRATEGY_REGISTRY: dict[str, SearchStrategySpec] = {
     "none": SearchStrategySpec(
@@ -350,13 +373,14 @@ DEFAULT_SEARCH_SPACES: dict[str, dict[str, dict[str, Any]]] = {
         "batch_size": {"type": "categorical", "choices": [64, 96, 128]},
     },
     "resdnn_v3": {
-        "learning_rate": {"type": "float", "low": 6e-5, "high": 3e-4, "log": True},
-        "dropout": {"type": "float", "low": 0.01, "high": 0.06},
-        "c_loss_weight": {"type": "float", "low": 2.0, "high": 3.8},
-        "num_residual_blocks": {"type": "int", "low": 6, "high": 10},
-        "block_width": {"type": "categorical", "choices": [320, 384, 448, 512]},
-        "batch_size": {"type": "categorical", "choices": [96, 128, 160]},
+        "learning_rate": {"type": "float", "low": 6e-5, "high": 5e-4, "log": True},
+        "dropout": {"type": "float", "low": 0.01, "high": 0.08},
+        "c_loss_weight": {"type": "float", "low": 1.5, "high": 5.0},
+        "num_residual_blocks": {"type": "int", "low": 4, "high": 10},
+        "block_width": {"type": "categorical", "choices": [256, 320, 384, 448, 512]},
+        "batch_size": {"type": "categorical", "choices": [64, 96, 128, 160]},
         "ema_decay": {"type": "float", "low": 0.99, "high": 0.999},
+        "weight_decay": {"type": "float", "low": 1e-5, "high": 1e-2, "log": True},
     },
     "xgboost": {
         "learning_rate": {"type": "float", "low": 0.01, "high": 0.1, "log": True},
@@ -382,14 +406,20 @@ DEFAULT_SEARCH_SPACES: dict[str, dict[str, dict[str, Any]]] = {
         "max_depth": {"type": "categorical", "choices": [None, 12, 18, 24, 32]},
         "min_samples_split": {"type": "int", "low": 2, "high": 12},
         "min_samples_leaf": {"type": "int", "low": 1, "high": 6},
-        "max_features": {"type": "categorical", "choices": ["sqrt", "log2", 0.5, 0.8, 1.0]},
+        "max_features": {
+            "type": "categorical",
+            "choices": ["sqrt", "log2", 0.5, 0.8, 1.0],
+        },
     },
     "extra_trees": {
         "n_estimators": {"type": "int", "low": 200, "high": 800},
         "max_depth": {"type": "categorical", "choices": [None, 12, 18, 24, 32]},
         "min_samples_split": {"type": "int", "low": 2, "high": 12},
         "min_samples_leaf": {"type": "int", "low": 1, "high": 6},
-        "max_features": {"type": "categorical", "choices": ["sqrt", "log2", 0.5, 0.8, 1.0]},
+        "max_features": {
+            "type": "categorical",
+            "choices": ["sqrt", "log2", 0.5, 0.8, 1.0],
+        },
     },
     "gradient_boosting": {
         "n_estimators": {"type": "int", "low": 150, "high": 600},
@@ -414,7 +444,9 @@ DEFAULT_SEARCH_SPACES: dict[str, dict[str, dict[str, Any]]] = {
 }
 
 
-def create_run_dir(root: Path, runs_root: str, model_name: str, tag: str | None) -> Path:
+def create_run_dir(
+    root: Path, runs_root: str, model_name: str, tag: str | None
+) -> Path:
     run_dir = root / runs_root / build_run_name(model_name, tag=tag)
     run_dir.mkdir(parents=True, exist_ok=True)
     return run_dir
@@ -429,7 +461,9 @@ def path_relative_to_root_if_possible(path: Path, root: Path) -> Path:
         return resolved_path
 
 
-def write_run_manifest(run_dir: Path, model_name: str, config: Any, overrides: dict[str, Any]) -> None:
+def write_run_manifest(
+    run_dir: Path, model_name: str, config: Any, overrides: dict[str, Any]
+) -> None:
     payload = {
         "model": model_name,
         "run_dir": str(run_dir),
@@ -437,12 +471,16 @@ def write_run_manifest(run_dir: Path, model_name: str, config: Any, overrides: d
         "config": asdict(config),
         "overrides": overrides,
     }
-    (run_dir / "run_manifest.json").write_text(json.dumps(payload, indent=2), encoding="ascii")
+    (run_dir / "run_manifest.json").write_text(
+        json.dumps(payload, indent=2), encoding="ascii"
+    )
 
 
 def get_model_config(model_name: str, overrides: dict[str, Any] | None = None) -> Any:
     if model_name not in MODEL_REGISTRY:
-        raise KeyError(f"Unsupported model '{model_name}'. Choose from: {sorted(MODEL_REGISTRY)}")
+        raise KeyError(
+            f"Unsupported model '{model_name}'. Choose from: {sorted(MODEL_REGISTRY)}"
+        )
     model_spec = MODEL_REGISTRY[model_name]
     config = model_spec.config_cls()
     merged_overrides: dict[str, Any] = dict(model_spec.base_overrides)
@@ -465,19 +503,34 @@ def read_metrics_value(metrics_file: Path, metric_path: str) -> float:
 def suggest_value(trial: Any, name: str, spec: dict[str, Any]) -> Any:
     spec_type = spec["type"]
     if spec_type == "float":
-        return trial.suggest_float(name, float(spec["low"]), float(spec["high"]), log=bool(spec.get("log", False)))
+        return trial.suggest_float(
+            name,
+            float(spec["low"]),
+            float(spec["high"]),
+            log=bool(spec.get("log", False)),
+        )
     if spec_type == "int":
-        return trial.suggest_int(name, int(spec["low"]), int(spec["high"]), step=int(spec.get("step", 1)))
+        return trial.suggest_int(
+            name, int(spec["low"]), int(spec["high"]), step=int(spec.get("step", 1))
+        )
     if spec_type == "categorical":
         return trial.suggest_categorical(name, list(spec["choices"]))
-    raise ValueError(f"Unsupported search space type '{spec_type}' for parameter '{name}'.")
+    raise ValueError(
+        f"Unsupported search space type '{spec_type}' for parameter '{name}'."
+    )
 
 
-def sample_search_overrides(trial: Any, search_space: dict[str, dict[str, Any]]) -> dict[str, Any]:
-    return {name: suggest_value(trial, name, spec) for name, spec in search_space.items()}
+def sample_search_overrides(
+    trial: Any, search_space: dict[str, dict[str, Any]]
+) -> dict[str, Any]:
+    return {
+        name: suggest_value(trial, name, spec) for name, spec in search_space.items()
+    }
 
 
-def load_search_space(model_name: str, search_space_json: str | None, search_space_file: Path | None) -> dict[str, dict[str, Any]]:
+def load_search_space(
+    model_name: str, search_space_json: str | None, search_space_file: Path | None
+) -> dict[str, dict[str, Any]]:
     search_space = dict(DEFAULT_SEARCH_SPACES.get(model_name, {}))
     if search_space_file is not None:
         search_space.update(json.loads(search_space_file.read_text(encoding="utf-8")))
@@ -490,7 +543,9 @@ def load_search_space(model_name: str, search_space_json: str | None, search_spa
 
 def get_search_strategy(strategy_name: str) -> SearchStrategySpec:
     if strategy_name not in SEARCH_STRATEGY_REGISTRY:
-        raise KeyError(f"Unsupported search strategy '{strategy_name}'. Choose from: {sorted(SEARCH_STRATEGY_REGISTRY)}")
+        raise KeyError(
+            f"Unsupported search strategy '{strategy_name}'. Choose from: {sorted(SEARCH_STRATEGY_REGISTRY)}"
+        )
     return SEARCH_STRATEGY_REGISTRY[strategy_name]
 
 
@@ -498,6 +553,8 @@ def create_optuna_sampler(optuna_module: Any, strategy: SearchStrategySpec) -> A
     if strategy.sampler_factory_name is None:
         return None
     sampler_cls = getattr(optuna_module.samplers, strategy.sampler_factory_name)
+    if strategy.sampler_factory_name == "TPESampler":
+        return sampler_cls(seed=42, multivariate=True, n_startup_trials=5)
     return sampler_cls(seed=42)
 
 
@@ -546,7 +603,9 @@ def write_leaderboard(search_root: Path, metric_path: str, direction: str) -> Pa
     rows.sort(key=lambda item: item["score"], reverse=reverse)
     leaderboard_file = search_root / "leaderboard.csv"
     write_trials_csv(leaderboard_file, rows)
-    (search_root / "leaderboard.json").write_text(json.dumps(rows, indent=2), encoding="utf-8")
+    (search_root / "leaderboard.json").write_text(
+        json.dumps(rows, indent=2), encoding="utf-8"
+    )
     return leaderboard_file
 
 
@@ -556,9 +615,12 @@ def run_experiment(
     runs_root: str = "colab_runs",
     tag: str | None = None,
     overrides: dict[str, Any] | None = None,
+    optuna_trial: Any = None,
 ) -> Path:
     if model_name not in MODEL_REGISTRY:
-        raise KeyError(f"Unsupported model '{model_name}'. Choose from: {sorted(MODEL_REGISTRY)}")
+        raise KeyError(
+            f"Unsupported model '{model_name}'. Choose from: {sorted(MODEL_REGISTRY)}"
+        )
 
     model_spec = MODEL_REGISTRY[model_name]
     merged_overrides: dict[str, Any] = dict(model_spec.base_overrides)
@@ -568,7 +630,9 @@ def run_experiment(
 
     resume_from_dir = merged_overrides.get("resume_from_dir")
     if resume_from_dir and model_spec.task_family != "neural":
-        raise ValueError("Checkpoint resume is currently supported for neural/PyTorch models only.")
+        raise ValueError(
+            "Checkpoint resume is currently supported for neural/PyTorch models only."
+        )
 
     if isinstance(resume_from_dir, str) and resume_from_dir.strip():
         run_dir = Path(resume_from_dir).expanduser().resolve()
@@ -583,6 +647,8 @@ def run_experiment(
         trainer = trainer_cls(root, config)
     else:
         trainer = trainer_cls(root, config, run_dir)
+    if optuna_trial is not None:
+        trainer._optuna_trial = optuna_trial
     trainer.run()
     print(f"Saved run outputs -> {run_dir}")
     return run_dir
@@ -609,7 +675,9 @@ def optimize_experiment(
     try:
         optuna = importlib.import_module("optuna")
     except ImportError as exc:
-        raise ImportError("optuna is required for optimizer modes. Install it with `pip install optuna`.") from exc
+        raise ImportError(
+            "optuna is required for optimizer modes. Install it with `pip install optuna`."
+        ) from exc
 
     base_name = build_run_name(f"{optimizer_name}-{model_name}", tag=tag)
     sweep_dir = root / runs_root / base_name
@@ -618,6 +686,9 @@ def optimize_experiment(
     trials_dir.mkdir(exist_ok=True)
 
     sampler = create_optuna_sampler(optuna, strategy)
+    pruner = optuna.pruners.MedianPruner(
+        n_startup_trials=5, n_warmup_steps=30, interval_steps=5
+    )
 
     trial_rows: list[dict[str, Any]] = []
 
@@ -637,6 +708,7 @@ def optimize_experiment(
             runs_root=str(trial_runs_root),
             tag=trial_tag,
             overrides=merged_overrides,
+            optuna_trial=trial,
         )
         score = read_metrics_value(run_dir / "metrics.json", metric_path)
         trial.set_user_attr("run_dir", str(run_dir))
@@ -654,7 +726,7 @@ def optimize_experiment(
         )
         return score
 
-    study = optuna.create_study(direction=direction, sampler=sampler)
+    study = optuna.create_study(direction=direction, sampler=sampler, pruner=pruner)
     study.optimize(objective, n_trials=n_trials)
 
     summary = {
@@ -669,7 +741,9 @@ def optimize_experiment(
         "search_space": search_space,
         "fixed_overrides": fixed_overrides,
     }
-    (sweep_dir / "study_summary.json").write_text(json.dumps(summary, indent=2), encoding="utf-8")
+    (sweep_dir / "study_summary.json").write_text(
+        json.dumps(summary, indent=2), encoding="utf-8"
+    )
     write_trials_csv(sweep_dir / "trials.csv", trial_rows)
     write_leaderboard(trials_dir, metric_path, direction)
     print(f"Saved optimization artifacts -> {sweep_dir}")
@@ -677,22 +751,63 @@ def optimize_experiment(
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Colab-friendly SMA training framework with selectable models.")
-    parser.add_argument("--root", type=Path, default=Path(__file__).resolve().parent, help="Workspace root")
-    parser.add_argument("--model", choices=sorted(MODEL_REGISTRY), default="ann", help="Model to train")
+    parser = argparse.ArgumentParser(
+        description="Colab-friendly SMA training framework with selectable models."
+    )
+    parser.add_argument(
+        "--root",
+        type=Path,
+        default=Path(__file__).resolve().parent,
+        help="Workspace root",
+    )
+    parser.add_argument(
+        "--model", choices=sorted(MODEL_REGISTRY), default="ann", help="Model to train"
+    )
     parser.add_argument(
         "--optimizer",
         choices=sorted(SEARCH_STRATEGY_REGISTRY),
         default="none",
         help="Search strategy registry entry for single run or hyperparameter optimization",
     )
-    parser.add_argument("--runs-root", type=str, default="colab_runs", help="Directory for timestamped run outputs")
-    parser.add_argument("--tag", type=str, default=None, help="Optional run tag appended to the run name")
-    parser.add_argument("--config-json", type=str, default=None, help="JSON string of config overrides")
-    parser.add_argument("--config-file", type=Path, default=None, help="Path to JSON file of config overrides")
-    parser.add_argument("--search-space-json", type=str, default=None, help="JSON string overriding the optimizer search space")
-    parser.add_argument("--search-space-file", type=Path, default=None, help="Path to JSON file overriding the optimizer search space")
-    parser.add_argument("--n-trials", type=int, default=12, help="Number of optimization trials when optimizer is enabled")
+    parser.add_argument(
+        "--runs-root",
+        type=str,
+        default="colab_runs",
+        help="Directory for timestamped run outputs",
+    )
+    parser.add_argument(
+        "--tag",
+        type=str,
+        default=None,
+        help="Optional run tag appended to the run name",
+    )
+    parser.add_argument(
+        "--config-json", type=str, default=None, help="JSON string of config overrides"
+    )
+    parser.add_argument(
+        "--config-file",
+        type=Path,
+        default=None,
+        help="Path to JSON file of config overrides",
+    )
+    parser.add_argument(
+        "--search-space-json",
+        type=str,
+        default=None,
+        help="JSON string overriding the optimizer search space",
+    )
+    parser.add_argument(
+        "--search-space-file",
+        type=Path,
+        default=None,
+        help="Path to JSON file overriding the optimizer search space",
+    )
+    parser.add_argument(
+        "--n-trials",
+        type=int,
+        default=12,
+        help="Number of optimization trials when optimizer is enabled",
+    )
     parser.add_argument(
         "--metric-path",
         type=str,
@@ -705,7 +820,9 @@ def main() -> None:
         default="minimize",
         help="Optimization direction for the selected metric",
     )
-    parser.add_argument("--list-models", action="store_true", help="List available models and exit")
+    parser.add_argument(
+        "--list-models", action="store_true", help="List available models and exit"
+    )
     parser.add_argument(
         "--summarize-runs-dir",
         type=Path,
@@ -719,7 +836,9 @@ def main() -> None:
         return
 
     if args.summarize_runs_dir is not None:
-        leaderboard_file = write_leaderboard(args.summarize_runs_dir.resolve(), args.metric_path, args.direction)
+        leaderboard_file = write_leaderboard(
+            args.summarize_runs_dir.resolve(), args.metric_path, args.direction
+        )
         print(f"Saved leaderboard -> {leaderboard_file}")
         return
 
@@ -734,7 +853,9 @@ def main() -> None:
         )
         return
 
-    search_space = load_search_space(args.model, args.search_space_json, args.search_space_file)
+    search_space = load_search_space(
+        args.model, args.search_space_json, args.search_space_file
+    )
     optimize_experiment(
         model_name=args.model,
         root=args.root.resolve(),

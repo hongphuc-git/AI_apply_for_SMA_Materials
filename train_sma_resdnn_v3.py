@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import importlib
 import math
 from dataclasses import dataclass
 from pathlib import Path
@@ -62,7 +63,9 @@ class SMAStableResidualDNNV3Net(nn.Module):
     def __init__(self, config: SMAResidualDNNV3Config) -> None:
         super().__init__()
         if len(config.hidden_layers) < 2:
-            raise ValueError("hidden_layers must contain at least 2 layers for stable residual DNN v3.")
+            raise ValueError(
+                "hidden_layers must contain at least 2 layers for stable residual DNN v3."
+            )
         stem_hidden, trunk_width = config.hidden_layers[0], config.block_width
         self.stem = nn.Sequential(
             nn.Linear(config.input_size, stem_hidden),
@@ -124,20 +127,49 @@ class SMAStableResidualDNNV3Net(nn.Module):
 
 
 class SMAResidualDNNV3Trainer(SMAAnnTrainer):
-    def __init__(self, root: Path, config: SMAResidualDNNV3Config | None = None) -> None:
+    def __init__(
+        self, root: Path, config: SMAResidualDNNV3Config | None = None
+    ) -> None:
         resolved_config = config or SMAResidualDNNV3Config()
         super().__init__(root, resolved_config)
         self.config = resolved_config
         self.output_dir = self.root / "python_resdnn_v3_outputs"
         self.output_dir.mkdir(exist_ok=True)
         self.model = SMAStableResidualDNNV3Net(self.config).to(self.device)
+        self._ema_model: SMAStableResidualDNNV3Net | None = None
         self.ema_state: dict[str, torch.Tensor] = {}
+        use_cuda = self.device.type == "cuda"
+        self._amp_enabled = use_cuda and hasattr(torch, "amp")
+        self._scaler: torch.cuda.amp.GradScaler | None = (
+            torch.cuda.amp.GradScaler() if self._amp_enabled else None
+        )
+        self._compiled_model: nn.Module = self.model
+        if use_cuda and hasattr(torch, "compile"):
+            try:
+                self._compiled_model = torch.compile(self.model)  # type: ignore[assignment]
+            except Exception:
+                pass
+        self._optuna_trial: Any = None
+
+    def _get_ema_model(self) -> SMAStableResidualDNNV3Net:
+        if self._ema_model is None:
+            self._ema_model = SMAStableResidualDNNV3Net(self.config).to(self.device)
+            self._ema_model.eval()
+        return self._ema_model
 
     def train_model(self, split_data: dict[str, Any]) -> None:
-        train_loader = self.make_loader(split_data["x_train_norm"], split_data["y_train_norm"], shuffle=True)
+        train_loader = self.make_loader(
+            split_data["x_train_norm"], split_data["y_train_norm"], shuffle=True
+        )
+        val_loader = self.make_loader(
+            split_data["x_val_norm"], split_data["y_val_norm"], shuffle=False
+        )
         criterion = self.make_weighted_mse()
         optimizer = create_torch_optimizer(self.model.parameters(), self.config)
-        self.ema_state = {key: value.detach().clone() for key, value in self.model.state_dict().items()}
+        self.ema_state = {
+            key: value.detach().clone()
+            for key, value in self.model.state_dict().items()
+        }
         best_val_loss = float("inf")
         best_state: dict[str, torch.Tensor] | None = None
         epochs_without_improvement = 0
@@ -147,7 +179,9 @@ class SMAResidualDNNV3Trainer(SMAAnnTrainer):
 
         checkpoint_payload = self.load_training_checkpoint()
         if checkpoint_payload is not None:
-            restored = self.restore_training_state(checkpoint_payload, optimizer, scheduler=None)
+            restored = self.restore_training_state(
+                checkpoint_payload, optimizer, scheduler=None
+            )
             start_epoch = restored["start_epoch"]
             best_val_loss = restored["best_val_loss"]
             best_state = restored["best_state"]
@@ -155,7 +189,12 @@ class SMAResidualDNNV3Trainer(SMAAnnTrainer):
             extra_state = restored["extra_state"]
             restored_ema = extra_state.get("ema_state")
             if isinstance(restored_ema, dict):
-                self.ema_state = {key: value.to(self.device) if isinstance(value, torch.Tensor) else value for key, value in restored_ema.items()}
+                self.ema_state = {
+                    key: value.to(self.device)
+                    if isinstance(value, torch.Tensor)
+                    else value
+                    for key, value in restored_ema.items()
+                }
             completed_epoch = max(start_epoch - 1, 0)
             print(
                 f"Resuming training from epoch {start_epoch} "
@@ -169,31 +208,61 @@ class SMAResidualDNNV3Trainer(SMAAnnTrainer):
                 param_group["lr"] = current_lr
 
             self.model.train()
+            self._compiled_model.train()
             train_loss_sum = 0.0
             train_count = 0
             for features, targets in train_loader:
-                features = features.to(self.device)
-                targets = targets.to(self.device)
-                optimizer.zero_grad()
-                predictions = self.model(features)
-                loss = criterion(predictions, targets)
-                loss.backward()
-                if self.config.gradient_clip_norm is not None and self.config.gradient_clip_norm > 0:
-                    torch.nn.utils.clip_grad_norm_(self.model.parameters(), self.config.gradient_clip_norm)
-                optimizer.step()
+                features = features.to(self.device, non_blocking=True)
+                targets = targets.to(self.device, non_blocking=True)
+                optimizer.zero_grad(set_to_none=True)
+                if self._amp_enabled and self._scaler is not None:
+                    with torch.autocast(device_type="cuda"):
+                        predictions = self._compiled_model(features)
+                        loss = criterion(predictions, targets)
+                    self._scaler.scale(loss).backward()
+                    if (
+                        self.config.gradient_clip_norm is not None
+                        and self.config.gradient_clip_norm > 0
+                    ):
+                        self._scaler.unscale_(optimizer)
+                        torch.nn.utils.clip_grad_norm_(
+                            self.model.parameters(), self.config.gradient_clip_norm
+                        )
+                    self._scaler.step(optimizer)
+                    self._scaler.update()
+                else:
+                    predictions = self._compiled_model(features)
+                    loss = criterion(predictions, targets)
+                    loss.backward()
+                    if (
+                        self.config.gradient_clip_norm is not None
+                        and self.config.gradient_clip_norm > 0
+                    ):
+                        torch.nn.utils.clip_grad_norm_(
+                            self.model.parameters(), self.config.gradient_clip_norm
+                        )
+                    optimizer.step()
                 self.update_ema()
                 batch_size = features.size(0)
                 train_loss_sum += float(loss.item()) * batch_size
                 train_count += batch_size
 
             train_loss = train_loss_sum / max(train_count, 1)
-            val_loss = self.compute_loss_with_ema(split_data["x_val_norm"], split_data["y_val_norm"], criterion)
+            val_loss = self.compute_loss_with_ema_loader(val_loader, criterion)
             self.history["train_loss"].append(train_loss)
             self.history["val_loss"].append(val_loss)
 
+            if self._optuna_trial is not None:
+                self._optuna_trial.report(val_loss, epoch)
+                if self._optuna_trial.should_prune():
+                    _optuna = importlib.import_module("optuna")
+                    raise _optuna.TrialPruned()
+
             if val_loss + self.config.early_stopping_min_delta < best_val_loss:
                 best_val_loss = val_loss
-                best_state = {key: value.detach().clone() for key, value in self.ema_state.items()}
+                best_state = {
+                    key: value.detach().clone() for key, value in self.ema_state.items()
+                }
                 epochs_without_improvement = 0
             else:
                 epochs_without_improvement += 1
@@ -215,7 +284,11 @@ class SMAResidualDNNV3Trainer(SMAAnnTrainer):
                     epochs_without_improvement=epochs_without_improvement,
                     extra_state=extra_state,
                 )
-            if best_state is not None and abs(best_val_loss - val_loss) <= self.config.early_stopping_min_delta:
+            if (
+                best_state is not None
+                and abs(best_val_loss - val_loss)
+                <= self.config.early_stopping_min_delta
+            ):
                 self.save_best_checkpoint(
                     epoch,
                     optimizer,
@@ -245,15 +318,26 @@ class SMAResidualDNNV3Trainer(SMAAnnTrainer):
                     continue
                 self.ema_state[key].mul_(decay).add_(value.detach(), alpha=1.0 - decay)
 
-    def compute_loss_with_ema(self, x: Any, y: Any, criterion: nn.Module) -> float:
-        current_state = {key: value.detach().clone() for key, value in self.model.state_dict().items()}
-        self.model.load_state_dict(self.ema_state)
-        try:
-            return self.compute_loss(x, y, criterion)
-        finally:
-            self.model.load_state_dict(current_state)
+    def compute_loss_with_ema_loader(self, loader: Any, criterion: nn.Module) -> float:
+        ema_model = self._get_ema_model()
+        ema_model.load_state_dict(self.ema_state)
+        ema_model.eval()
+        total_loss = 0.0
+        total_count = 0
+        with torch.no_grad():
+            for features, targets in loader:
+                features = features.to(self.device, non_blocking=True)
+                targets = targets.to(self.device, non_blocking=True)
+                predictions = ema_model(features)
+                total_loss += float(
+                    criterion(predictions, targets).item()
+                ) * features.size(0)
+                total_count += features.size(0)
+        return total_loss / max(total_count, 1)
 
-    def compute_epoch_lr(self, epoch: int, total_epochs: int, warmup_epochs: int) -> float:
+    def compute_epoch_lr(
+        self, epoch: int, total_epochs: int, warmup_epochs: int
+    ) -> float:
         base_lr = self.config.learning_rate
         min_lr = self.config.min_learning_rate
         if epoch <= warmup_epochs:
@@ -264,14 +348,39 @@ class SMAResidualDNNV3Trainer(SMAAnnTrainer):
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Train stable deeper residual DNN v3 regressor for SMA dataset.")
-    parser.add_argument("--root", type=Path, default=Path(__file__).resolve().parent, help="Workspace root")
-    parser.add_argument("--epochs", type=int, default=None, help="Override number of epochs")
-    parser.add_argument("--c-loss-weight", type=float, default=None, help="Override loss weight for coefficient C")
-    parser.add_argument("--learning-rate", type=float, default=None, help="Override learning rate")
-    parser.add_argument("--batch-size", type=int, default=None, help="Override batch size")
-    parser.add_argument("--num-residual-blocks", type=int, default=None, help="Override number of residual blocks")
-    parser.add_argument("--block-width", type=int, default=None, help="Override residual block width")
+    parser = argparse.ArgumentParser(
+        description="Train stable deeper residual DNN v3 regressor for SMA dataset."
+    )
+    parser.add_argument(
+        "--root",
+        type=Path,
+        default=Path(__file__).resolve().parent,
+        help="Workspace root",
+    )
+    parser.add_argument(
+        "--epochs", type=int, default=None, help="Override number of epochs"
+    )
+    parser.add_argument(
+        "--c-loss-weight",
+        type=float,
+        default=None,
+        help="Override loss weight for coefficient C",
+    )
+    parser.add_argument(
+        "--learning-rate", type=float, default=None, help="Override learning rate"
+    )
+    parser.add_argument(
+        "--batch-size", type=int, default=None, help="Override batch size"
+    )
+    parser.add_argument(
+        "--num-residual-blocks",
+        type=int,
+        default=None,
+        help="Override number of residual blocks",
+    )
+    parser.add_argument(
+        "--block-width", type=int, default=None, help="Override residual block width"
+    )
     args = parser.parse_args()
 
     config = SMAResidualDNNV3Config()

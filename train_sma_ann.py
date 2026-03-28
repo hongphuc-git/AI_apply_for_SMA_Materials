@@ -40,7 +40,7 @@ class SMAAnnConfig:
     optimizer_betas: tuple[float, float] = (0.9, 0.999)
     optimizer_momentum: float = 0.9
     rmsprop_alpha: float = 0.99
-    checkpoint_every_epochs: int = 1
+    checkpoint_every_epochs: int = 10
     resume_from_dir: str | None = None
     c_loss_weight: float = 2.8
     loss_name: str = "mse"
@@ -60,7 +60,9 @@ class SMAAnnConfig:
 
 
 class MinMaxNormalizer:
-    def __init__(self, y_min: np.ndarray | None = None, y_max: np.ndarray | None = None) -> None:
+    def __init__(
+        self, y_min: np.ndarray | None = None, y_max: np.ndarray | None = None
+    ) -> None:
         self.y_min = None if y_min is None else np.asarray(y_min, dtype=np.float64)
         self.y_max = None if y_max is None else np.asarray(y_max, dtype=np.float64)
         self.y_span: np.ndarray | None = None
@@ -90,7 +92,11 @@ class MinMaxNormalizer:
         if self.y_min is None or self.y_span is None:
             raise ValueError("Normalizer is not fitted.")
         values_array = np.asarray(values)
-        work_dtype = values_array.dtype if np.issubdtype(values_array.dtype, np.floating) else np.float32
+        work_dtype = (
+            values_array.dtype
+            if np.issubdtype(values_array.dtype, np.floating)
+            else np.float32
+        )
         safe_span = np.asarray(self.y_span, dtype=work_dtype)
         y_min = np.asarray(self.y_min, dtype=work_dtype)
         return (values_array - y_min) / safe_span
@@ -99,13 +105,22 @@ class MinMaxNormalizer:
         if self.y_min is None or self.y_span is None:
             raise ValueError("Normalizer is not fitted.")
         values_array = np.asarray(values)
-        work_dtype = values_array.dtype if np.issubdtype(values_array.dtype, np.floating) else np.float32
+        work_dtype = (
+            values_array.dtype
+            if np.issubdtype(values_array.dtype, np.floating)
+            else np.float32
+        )
         y_span = np.asarray(self.y_span, dtype=work_dtype)
         y_min = np.asarray(self.y_min, dtype=work_dtype)
         return values_array * y_span + y_min
 
     def to_dict(self) -> dict[str, list[float]]:
-        if self.y_min is None or self.y_max is None or self.y_span is None or self.zero_span_mask is None:
+        if (
+            self.y_min is None
+            or self.y_max is None
+            or self.y_span is None
+            or self.zero_span_mask is None
+        ):
             raise ValueError("Normalizer is not fitted.")
         return {
             "y_min": self.y_min.tolist(),
@@ -117,7 +132,9 @@ class MinMaxNormalizer:
 
 class RegressionMetrics:
     @staticmethod
-    def evaluate(y_true: np.ndarray, y_pred: np.ndarray, label_names: tuple[str, ...]) -> dict[str, Any]:
+    def evaluate(
+        y_true: np.ndarray, y_pred: np.ndarray, label_names: tuple[str, ...]
+    ) -> dict[str, Any]:
         mae = np.mean(np.abs(y_pred - y_true), axis=0)
         rmse = np.sqrt(np.mean((y_pred - y_true) ** 2, axis=0))
         ss_res = np.sum((y_true - y_pred) ** 2, axis=0)
@@ -154,12 +171,24 @@ def summarize_split_shapes(split_data: dict[str, Any]) -> dict[str, Any]:
         "feature_dim": int(split_data["x_train_norm"].shape[1]),
         "target_dim": int(split_data["y_train_norm"].shape[1]),
         "rate_summary": format_rate_levels(
-            np.concatenate([split_data["rate_train"], split_data["rate_val"], split_data["rate_test"]])
+            np.concatenate(
+                [
+                    split_data["rate_train"],
+                    split_data["rate_val"],
+                    split_data["rate_test"],
+                ]
+            )
         ),
     }
 
 
-def estimate_runtime_band(total_steps: int, train_samples: int, feature_dim: int, model_size_hint: int, device_kind: str) -> str:
+def estimate_runtime_band(
+    total_steps: int,
+    train_samples: int,
+    feature_dim: int,
+    model_size_hint: int,
+    device_kind: str,
+) -> str:
     complexity = max(total_steps, 1) * max(train_samples, 1) * max(feature_dim, 1)
     scaled = complexity * max(model_size_hint, 1)
     if device_kind == "cuda":
@@ -177,18 +206,24 @@ def estimate_runtime_band(total_steps: int, train_samples: int, feature_dim: int
 
 def build_device_summary(device: torch.device) -> str:
     if device.type == "cuda":
-        device_index = device.index if device.index is not None else torch.cuda.current_device()
+        device_index = (
+            device.index if device.index is not None else torch.cuda.current_device()
+        )
         props = torch.cuda.get_device_properties(device_index)
-        total_memory_gb = props.total_memory / float(1024 ** 3)
+        total_memory_gb = props.total_memory / float(1024**3)
         return f"GPU | {props.name} | VRAM={total_memory_gb:.1f} GB"
     return "CPU | CUDA not available"
 
 
-def build_hardware_fit_note(device: torch.device, batch_size: int, epochs: int, parameter_count: int) -> str:
+def build_hardware_fit_note(
+    device: torch.device, batch_size: int, epochs: int, parameter_count: int
+) -> str:
     if device.type == "cuda":
-        device_index = device.index if device.index is not None else torch.cuda.current_device()
+        device_index = (
+            device.index if device.index is not None else torch.cuda.current_device()
+        )
         props = torch.cuda.get_device_properties(device_index)
-        total_memory_gb = props.total_memory / float(1024 ** 3)
+        total_memory_gb = props.total_memory / float(1024**3)
         if total_memory_gb < 8.0 and batch_size >= 128:
             return "Current batch size may be aggressive for small GPUs; if you hit OOM, try batch_size=32 or 64."
         if total_memory_gb < 12.0 and parameter_count > 3_000_000:
@@ -203,30 +238,65 @@ def build_hardware_fit_note(device: torch.device, batch_size: int, epochs: int, 
 
 def count_model_parameters(model: nn.Module) -> tuple[int, int]:
     total = sum(parameter.numel() for parameter in model.parameters())
-    trainable = sum(parameter.numel() for parameter in model.parameters() if parameter.requires_grad)
+    trainable = sum(
+        parameter.numel() for parameter in model.parameters() if parameter.requires_grad
+    )
     return total, trainable
 
 
-def move_optimizer_state_to_device(optimizer: torch.optim.Optimizer, device: torch.device) -> None:
+def move_optimizer_state_to_device(
+    optimizer: torch.optim.Optimizer, device: torch.device
+) -> None:
     for state in optimizer.state.values():
         for key, value in state.items():
             if isinstance(value, torch.Tensor):
                 state[key] = value.to(device)
 
 
-def create_torch_optimizer(parameters: Any, config: SMAAnnConfig) -> torch.optim.Optimizer:
+def create_torch_optimizer(
+    parameters: Any, config: SMAAnnConfig
+) -> torch.optim.Optimizer:
     optimizer_name = str(config.optimizer_name).lower()
     if optimizer_name == "adamw":
-        return torch.optim.AdamW(parameters, lr=config.learning_rate, weight_decay=config.weight_decay, betas=config.optimizer_betas)
+        return torch.optim.AdamW(
+            parameters,
+            lr=config.learning_rate,
+            weight_decay=config.weight_decay,
+            betas=config.optimizer_betas,
+        )
     if optimizer_name == "adam":
-        return torch.optim.Adam(parameters, lr=config.learning_rate, weight_decay=config.weight_decay, betas=config.optimizer_betas)
+        return torch.optim.Adam(
+            parameters,
+            lr=config.learning_rate,
+            weight_decay=config.weight_decay,
+            betas=config.optimizer_betas,
+        )
     if optimizer_name == "nadam":
-        return torch.optim.NAdam(parameters, lr=config.learning_rate, weight_decay=config.weight_decay, betas=config.optimizer_betas)
+        return torch.optim.NAdam(
+            parameters,
+            lr=config.learning_rate,
+            weight_decay=config.weight_decay,
+            betas=config.optimizer_betas,
+        )
     if optimizer_name == "rmsprop":
-        return torch.optim.RMSprop(parameters, lr=config.learning_rate, weight_decay=config.weight_decay, momentum=config.optimizer_momentum, alpha=config.rmsprop_alpha)
+        return torch.optim.RMSprop(
+            parameters,
+            lr=config.learning_rate,
+            weight_decay=config.weight_decay,
+            momentum=config.optimizer_momentum,
+            alpha=config.rmsprop_alpha,
+        )
     if optimizer_name == "sgd":
-        return torch.optim.SGD(parameters, lr=config.learning_rate, weight_decay=config.weight_decay, momentum=config.optimizer_momentum, nesterov=config.optimizer_momentum > 0)
-    raise ValueError(f"Unsupported optimizer_name '{config.optimizer_name}'. Choose from: adamw, adam, nadam, rmsprop, sgd")
+        return torch.optim.SGD(
+            parameters,
+            lr=config.learning_rate,
+            weight_decay=config.weight_decay,
+            momentum=config.optimizer_momentum,
+            nesterov=config.optimizer_momentum > 0,
+        )
+    raise ValueError(
+        f"Unsupported optimizer_name '{config.optimizer_name}'. Choose from: adamw, adam, nadam, rmsprop, sgd"
+    )
 
 
 class MatDatasetLoader:
@@ -237,14 +307,20 @@ class MatDatasetLoader:
     def find_data_dir(self) -> Path:
         if self.config.explicit_data_dir:
             explicit_dir = Path(self.config.explicit_data_dir).expanduser()
-            if (explicit_dir / "train.mat").is_file() and (explicit_dir / "test.mat").is_file():
+            if (explicit_dir / "train.mat").is_file() and (
+                explicit_dir / "test.mat"
+            ).is_file():
                 return explicit_dir
-            raise FileNotFoundError(f"explicit_data_dir does not contain train.mat/test.mat: {explicit_dir}")
+            raise FileNotFoundError(
+                f"explicit_data_dir does not contain train.mat/test.mat: {explicit_dir}"
+            )
         for relative_dir in self.config.candidate_data_dirs:
             data_dir = self.root / relative_dir
             if (data_dir / "train.mat").is_file() and (data_dir / "test.mat").is_file():
                 return data_dir
-        checked = ", ".join(str(self.root / item) for item in self.config.candidate_data_dirs)
+        checked = ", ".join(
+            str(self.root / item) for item in self.config.candidate_data_dirs
+        )
         raise FileNotFoundError(f"Could not find train.mat/test.mat in: {checked}")
 
     def load_split(self, file_path: Path) -> dict[str, np.ndarray]:
@@ -309,7 +385,9 @@ class MatDatasetLoader:
             return array
         if array.shape[0] == expected_width:
             return array.T
-        raise ValueError(f"Expected one dimension to equal {expected_width}, got {array.shape}")
+        raise ValueError(
+            f"Expected one dimension to equal {expected_width}, got {array.shape}"
+        )
 
 
 class SMAFeedForwardNet(nn.Module):
@@ -361,9 +439,12 @@ class WeightedHuberLoss(nn.Module):
     def forward(self, prediction: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
         error = prediction - target
         abs_error = torch.abs(error)
-        quadratic = torch.minimum(abs_error, torch.tensor(self.delta, device=abs_error.device, dtype=abs_error.dtype))
+        quadratic = torch.minimum(
+            abs_error,
+            torch.tensor(self.delta, device=abs_error.device, dtype=abs_error.dtype),
+        )
         linear = abs_error - quadratic
-        huber = 0.5 * quadratic ** 2 + self.delta * linear
+        huber = 0.5 * quadratic**2 + self.delta * linear
         weights = self.output_weights
         if not isinstance(weights, torch.Tensor):
             raise TypeError("output_weights must be a Tensor.")
@@ -393,7 +474,9 @@ class SMAAnnTrainer:
             torch.cuda.manual_seed_all(self.config.seed)
 
     def make_weighted_mse(self) -> nn.Module:
-        weights = torch.ones(self.config.output_size, dtype=torch.float32, device=self.device)
+        weights = torch.ones(
+            self.config.output_size, dtype=torch.float32, device=self.device
+        )
         weights[0] = float(self.config.c_loss_weight)
         if self.config.loss_name == "mse":
             return WeightedMSELoss(weights)
@@ -422,22 +505,56 @@ class SMAAnnTrainer:
     def print_run_overview(self, split_data: dict[str, Any]) -> None:
         total_params, trainable_params = count_model_parameters(self.model)
         shape_summary = summarize_split_shapes(split_data)
-        steps_per_epoch = max(1, math.ceil(shape_summary["train_samples"] / max(int(self.config.batch_size), 1)))
+        steps_per_epoch = max(
+            1,
+            math.ceil(
+                shape_summary["train_samples"] / max(int(self.config.batch_size), 1)
+            ),
+        )
         total_steps = steps_per_epoch * max(int(self.config.epochs), 1)
         print("Run overview")
         print(f"  Data directory      : {self.data_dir}")
         print("  Data files         : train.mat + test.mat")
-        print(f"  Input format       : X + rate -> {shape_summary['feature_dim']} features per sample")
-        print(f"  Target format      : Y -> {shape_summary['target_dim']} regression targets {self.config.label_names}")
-        print(f"  Dataset split      : train={shape_summary['train_samples']}, val={shape_summary['val_samples']}, test={shape_summary['test_samples']}")
+        print(
+            f"  Input format       : X + rate -> {shape_summary['feature_dim']} features per sample"
+        )
+        print(
+            f"  Target format      : Y -> {shape_summary['target_dim']} regression targets {self.config.label_names}"
+        )
+        print(
+            f"  Dataset split      : train={shape_summary['train_samples']}, val={shape_summary['val_samples']}, test={shape_summary['test_samples']}"
+        )
         print(f"  Rate coverage      : {shape_summary['rate_summary']}")
         print(f"  Device             : {build_device_summary(self.device)}")
         print(f"  Model              : {self.model.__class__.__name__}")
-        print(f"  Parameters         : total={total_params:,}, trainable={trainable_params:,}")
-        print(f"  Config             : epochs={self.config.epochs}, batch_size={self.config.batch_size}, lr={self.config.learning_rate:g}, optimizer={self.config.optimizer_name}")
-        print(f"  Steps              : {steps_per_epoch} per epoch, {total_steps} total")
-        print("  Time estimate      : " + estimate_runtime_band(total_steps, shape_summary["train_samples"], shape_summary["feature_dim"], total_params, self.device.type))
-        print("  Hardware fit       : " + build_hardware_fit_note(self.device, int(self.config.batch_size), int(self.config.epochs), total_params))
+        print(
+            f"  Parameters         : total={total_params:,}, trainable={trainable_params:,}"
+        )
+        print(
+            f"  Config             : epochs={self.config.epochs}, batch_size={self.config.batch_size}, lr={self.config.learning_rate:g}, optimizer={self.config.optimizer_name}"
+        )
+        print(
+            f"  Steps              : {steps_per_epoch} per epoch, {total_steps} total"
+        )
+        print(
+            "  Time estimate      : "
+            + estimate_runtime_band(
+                total_steps,
+                shape_summary["train_samples"],
+                shape_summary["feature_dim"],
+                total_params,
+                self.device.type,
+            )
+        )
+        print(
+            "  Hardware fit       : "
+            + build_hardware_fit_note(
+                self.device,
+                int(self.config.batch_size),
+                int(self.config.epochs),
+                total_params,
+            )
+        )
         resume_checkpoint = self.find_resume_checkpoint_path()
         if resume_checkpoint is not None:
             print(f"  Resume mode        : auto-resume from {resume_checkpoint}")
@@ -466,7 +583,9 @@ class SMAAnnTrainer:
             "epoch": epoch,
             "model_state_dict": self.model.state_dict(),
             "optimizer_state_dict": optimizer.state_dict(),
-            "scheduler_state_dict": None if scheduler is None else scheduler.state_dict(),
+            "scheduler_state_dict": None
+            if scheduler is None
+            else scheduler.state_dict(),
             "best_val_loss": best_val_loss,
             "best_state_dict": best_state,
             "epochs_without_improvement": epochs_without_improvement,
@@ -488,7 +607,15 @@ class SMAAnnTrainer:
         extra_state: dict[str, Any] | None = None,
     ) -> None:
         torch.save(
-            self.build_checkpoint_payload(epoch, optimizer, scheduler, best_val_loss, best_state, epochs_without_improvement, extra_state),
+            self.build_checkpoint_payload(
+                epoch,
+                optimizer,
+                scheduler,
+                best_val_loss,
+                best_state,
+                epochs_without_improvement,
+                extra_state,
+            ),
             self.latest_checkpoint_path(),
         )
 
@@ -502,7 +629,15 @@ class SMAAnnTrainer:
         epochs_without_improvement: int,
         extra_state: dict[str, Any] | None = None,
     ) -> None:
-        payload = self.build_checkpoint_payload(epoch, optimizer, scheduler, best_val_loss, best_state, epochs_without_improvement, extra_state)
+        payload = self.build_checkpoint_payload(
+            epoch,
+            optimizer,
+            scheduler,
+            best_val_loss,
+            best_state,
+            epochs_without_improvement,
+            extra_state,
+        )
         payload["model_state_dict"] = best_state
         torch.save(payload, self.best_checkpoint_path())
 
@@ -512,23 +647,36 @@ class SMAAnnTrainer:
             return None
         return torch.load(checkpoint_path, map_location=self.device)
 
-    def restore_training_state(self, checkpoint_payload: dict[str, Any], optimizer: torch.optim.Optimizer, scheduler: Any) -> dict[str, Any]:
+    def restore_training_state(
+        self,
+        checkpoint_payload: dict[str, Any],
+        optimizer: torch.optim.Optimizer,
+        scheduler: Any,
+    ) -> dict[str, Any]:
         self.model.load_state_dict(checkpoint_payload["model_state_dict"])
         optimizer.load_state_dict(checkpoint_payload["optimizer_state_dict"])
         move_optimizer_state_to_device(optimizer, self.device)
         scheduler_state_dict = checkpoint_payload.get("scheduler_state_dict")
         if scheduler is not None and scheduler_state_dict is not None:
             scheduler.load_state_dict(scheduler_state_dict)
-        self.history = checkpoint_payload.get("history", {"train_loss": [], "val_loss": []})
+        self.history = checkpoint_payload.get(
+            "history", {"train_loss": [], "val_loss": []}
+        )
         return {
             "start_epoch": int(checkpoint_payload.get("epoch", 0)) + 1,
-            "best_val_loss": float(checkpoint_payload.get("best_val_loss", float("inf"))),
+            "best_val_loss": float(
+                checkpoint_payload.get("best_val_loss", float("inf"))
+            ),
             "best_state": checkpoint_payload.get("best_state_dict"),
-            "epochs_without_improvement": int(checkpoint_payload.get("epochs_without_improvement", 0)),
+            "epochs_without_improvement": int(
+                checkpoint_payload.get("epochs_without_improvement", 0)
+            ),
             "extra_state": checkpoint_payload.get("extra_state", {}),
         }
 
-    def prepare_datasets(self, train_raw: dict[str, np.ndarray], test_raw: dict[str, np.ndarray]) -> dict[str, Any]:
+    def prepare_datasets(
+        self, train_raw: dict[str, np.ndarray], test_raw: dict[str, np.ndarray]
+    ) -> dict[str, Any]:
         x_train_all = train_raw["X"].astype(np.float64)
         y_train_all = train_raw["Y"].astype(np.float64)
         rate_train_all = train_raw["rate"].astype(np.float64)
@@ -578,7 +726,9 @@ class SMAAnnTrainer:
             "y_test_norm": y_test_norm,
         }
 
-    def stratified_split(self, rate: np.ndarray, train_target: int, val_target: int) -> tuple[np.ndarray, np.ndarray]:
+    def stratified_split(
+        self, rate: np.ndarray, train_target: int, val_target: int
+    ) -> tuple[np.ndarray, np.ndarray]:
         rate_levels = np.unique(rate)
         train_counts = self.distribute_counts(train_target, rate_levels.size)
         val_counts = self.distribute_counts(val_target, rate_levels.size)
@@ -592,10 +742,14 @@ class SMAAnnTrainer:
             n_val_rate = int(val_counts[idx])
             n_needed = n_train_rate + n_val_rate
             if idx_rate.size < n_needed:
-                raise ValueError(f"Not enough samples for rate {level:.4f}. Need {n_needed}, found {idx_rate.size}.")
+                raise ValueError(
+                    f"Not enough samples for rate {level:.4f}. Need {n_needed}, found {idx_rate.size}."
+                )
             train_indices.extend(idx_rate[:n_train_rate].tolist())
             val_indices.extend(idx_rate[n_train_rate:n_needed].tolist())
-        train_indices_arr = self.rng.permutation(np.asarray(train_indices, dtype=np.int64))
+        train_indices_arr = self.rng.permutation(
+            np.asarray(train_indices, dtype=np.int64)
+        )
         val_indices_arr = self.rng.permutation(np.asarray(val_indices, dtype=np.int64))
         return train_indices_arr, val_indices_arr
 
@@ -609,7 +763,9 @@ class SMAAnnTrainer:
         return counts
 
     def train_model(self, split_data: dict[str, Any]) -> None:
-        train_loader = self.make_loader(split_data["x_train_norm"], split_data["y_train_norm"], shuffle=True)
+        train_loader = self.make_loader(
+            split_data["x_train_norm"], split_data["y_train_norm"], shuffle=True
+        )
         criterion = self.make_weighted_mse()
         optimizer = create_torch_optimizer(self.model.parameters(), self.config)
         scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
@@ -624,7 +780,9 @@ class SMAAnnTrainer:
         start_epoch = 1
         checkpoint_payload = self.load_training_checkpoint()
         if checkpoint_payload is not None:
-            restored = self.restore_training_state(checkpoint_payload, optimizer, scheduler)
+            restored = self.restore_training_state(
+                checkpoint_payload, optimizer, scheduler
+            )
             start_epoch = restored["start_epoch"]
             best_val_loss = restored["best_val_loss"]
             best_state = restored["best_state"]
@@ -646,14 +804,21 @@ class SMAAnnTrainer:
                 predictions = self.model(features)
                 loss = criterion(predictions, targets)
                 loss.backward()
-                if self.config.gradient_clip_norm is not None and self.config.gradient_clip_norm > 0:
-                    torch.nn.utils.clip_grad_norm_(self.model.parameters(), self.config.gradient_clip_norm)
+                if (
+                    self.config.gradient_clip_norm is not None
+                    and self.config.gradient_clip_norm > 0
+                ):
+                    torch.nn.utils.clip_grad_norm_(
+                        self.model.parameters(), self.config.gradient_clip_norm
+                    )
                 optimizer.step()
                 batch_size = features.size(0)
                 train_loss_sum += float(loss.item()) * batch_size
                 train_count += batch_size
             train_loss = train_loss_sum / max(train_count, 1)
-            val_loss = self.compute_loss(split_data["x_val_norm"], split_data["y_val_norm"], criterion)
+            val_loss = self.compute_loss(
+                split_data["x_val_norm"], split_data["y_val_norm"], criterion
+            )
             scheduler.step(val_loss)
             self.history["train_loss"].append(train_loss)
             self.history["val_loss"].append(val_loss)
@@ -661,7 +826,8 @@ class SMAAnnTrainer:
             if val_loss + self.config.early_stopping_min_delta < best_val_loss:
                 best_val_loss = val_loss
                 best_state = {
-                    key: value.detach().cpu().clone() for key, value in self.model.state_dict().items()
+                    key: value.detach().cpu().clone()
+                    for key, value in self.model.state_dict().items()
                 }
                 epochs_without_improvement = 0
             else:
@@ -683,7 +849,11 @@ class SMAAnnTrainer:
                     best_state,
                     epochs_without_improvement,
                 )
-            if best_state is not None and abs(best_val_loss - val_loss) <= self.config.early_stopping_min_delta:
+            if (
+                best_state is not None
+                and abs(best_val_loss - val_loss)
+                <= self.config.early_stopping_min_delta
+            ):
                 self.save_best_checkpoint(
                     epoch,
                     optimizer,
@@ -704,8 +874,26 @@ class SMAAnnTrainer:
             self.model.load_state_dict(best_state)
 
     def make_loader(self, x: np.ndarray, y: np.ndarray, shuffle: bool) -> DataLoader:
-        dataset = TensorDataset(torch.from_numpy(x.astype(np.float32)), torch.from_numpy(y.astype(np.float32)))
-        return DataLoader(dataset, batch_size=self.config.batch_size, shuffle=shuffle)
+        import platform
+
+        dataset = TensorDataset(
+            torch.from_numpy(x.astype(np.float32)),
+            torch.from_numpy(y.astype(np.float32)),
+        )
+        # Windows multiprocessing with DataLoader requires the spawn start method which
+        # adds overhead; default to 0 workers there to avoid it. On Linux/macOS (Colab
+        # included) use 2 workers so data prefetch overlaps with GPU compute.
+        use_workers = 0 if platform.system() == "Windows" else 2
+        use_pin_memory = self.device.type == "cuda"
+        return DataLoader(
+            dataset,
+            batch_size=self.config.batch_size,
+            shuffle=shuffle,
+            num_workers=use_workers,
+            pin_memory=use_pin_memory,
+            persistent_workers=(use_workers > 0),
+            prefetch_factor=2 if use_workers > 0 else None,
+        )
 
     def compute_loss(self, x: np.ndarray, y: np.ndarray, criterion: nn.Module) -> float:
         self.model.eval()
@@ -717,7 +905,9 @@ class SMAAnnTrainer:
                 features = features.to(self.device)
                 targets = targets.to(self.device)
                 predictions = self.model(features)
-                total_loss += float(criterion(predictions, targets).item()) * features.size(0)
+                total_loss += float(
+                    criterion(predictions, targets).item()
+                ) * features.size(0)
                 total_count += features.size(0)
         return total_loss / max(total_count, 1)
 
@@ -742,12 +932,24 @@ class SMAAnnTrainer:
         return {
             "split_data": split_data,
             "history": self.history,
-            "train_metrics_norm": RegressionMetrics.evaluate(split_data["y_train_norm"], y_train_pred_norm, self.config.label_names),
-            "val_metrics_norm": RegressionMetrics.evaluate(split_data["y_val_norm"], y_val_pred_norm, self.config.label_names),
-            "test_metrics_norm": RegressionMetrics.evaluate(split_data["y_test_norm"], y_test_pred_norm, self.config.label_names),
-            "train_metrics": RegressionMetrics.evaluate(split_data["y_train"], y_train_pred, self.config.label_names),
-            "val_metrics": RegressionMetrics.evaluate(split_data["y_val"], y_val_pred, self.config.label_names),
-            "test_metrics": RegressionMetrics.evaluate(split_data["y_test"], y_test_pred, self.config.label_names),
+            "train_metrics_norm": RegressionMetrics.evaluate(
+                split_data["y_train_norm"], y_train_pred_norm, self.config.label_names
+            ),
+            "val_metrics_norm": RegressionMetrics.evaluate(
+                split_data["y_val_norm"], y_val_pred_norm, self.config.label_names
+            ),
+            "test_metrics_norm": RegressionMetrics.evaluate(
+                split_data["y_test_norm"], y_test_pred_norm, self.config.label_names
+            ),
+            "train_metrics": RegressionMetrics.evaluate(
+                split_data["y_train"], y_train_pred, self.config.label_names
+            ),
+            "val_metrics": RegressionMetrics.evaluate(
+                split_data["y_val"], y_val_pred, self.config.label_names
+            ),
+            "test_metrics": RegressionMetrics.evaluate(
+                split_data["y_test"], y_test_pred, self.config.label_names
+            ),
             "y_train_pred_norm": y_train_pred_norm,
             "y_val_pred_norm": y_val_pred_norm,
             "y_test_pred_norm": y_test_pred_norm,
@@ -757,12 +959,15 @@ class SMAAnnTrainer:
         }
 
     def save_artifacts(self, artifacts: dict[str, Any]) -> None:
-        torch.save({
-            "model_state_dict": self.model.state_dict(),
-            "config": asdict(self.config),
-            "input_normalizer": self.input_normalizer.to_dict(),
-            "target_normalizer": self.target_normalizer.to_dict(),
-        }, self.output_dir / "sma_dnn_regressor.pt")
+        torch.save(
+            {
+                "model_state_dict": self.model.state_dict(),
+                "config": asdict(self.config),
+                "input_normalizer": self.input_normalizer.to_dict(),
+                "target_normalizer": self.target_normalizer.to_dict(),
+            },
+            self.output_dir / "sma_dnn_regressor.pt",
+        )
         metrics_payload = {
             "config": asdict(self.config),
             "history": self.history,
@@ -775,7 +980,9 @@ class SMAAnnTrainer:
             "val_metrics": artifacts["val_metrics"],
             "test_metrics": artifacts["test_metrics"],
         }
-        (self.output_dir / "metrics.json").write_text(json.dumps(metrics_payload, indent=2), encoding="ascii")
+        (self.output_dir / "metrics.json").write_text(
+            json.dumps(metrics_payload, indent=2), encoding="ascii"
+        )
         np.savez(
             self.output_dir / "predictions.npz",
             y_train_pred=artifacts["y_train_pred"],
@@ -792,14 +999,40 @@ class SMAAnnTrainer:
 
     def save_plots(self, artifacts: dict[str, Any]) -> None:
         self._save_loss_plot()
-        self._save_scatter_plot(artifacts["split_data"]["y_test"], artifacts["y_test_pred"], artifacts["test_metrics"]["r2"], "physical", False)
-        self._save_scatter_plot(artifacts["split_data"]["y_test_norm"], artifacts["y_test_pred_norm"], artifacts["test_metrics_norm"]["r2"], "normalized", True)
+        self._save_scatter_plot(
+            artifacts["split_data"]["y_test"],
+            artifacts["y_test_pred"],
+            artifacts["test_metrics"]["r2"],
+            "physical",
+            False,
+        )
+        self._save_scatter_plot(
+            artifacts["split_data"]["y_test_norm"],
+            artifacts["y_test_pred_norm"],
+            artifacts["test_metrics_norm"]["r2"],
+            "normalized",
+            True,
+        )
 
     def _save_loss_plot(self) -> None:
         epochs = np.arange(1, len(self.history["train_loss"]) + 1)
         fig, ax = plt.subplots(figsize=(8, 4.5))
-        ax.plot(epochs, self.history["train_loss"], marker="o", linewidth=1.5, markersize=3, label="Train")
-        ax.plot(epochs, self.history["val_loss"], marker="s", linewidth=1.5, markersize=3, label="Validation")
+        ax.plot(
+            epochs,
+            self.history["train_loss"],
+            marker="o",
+            linewidth=1.5,
+            markersize=3,
+            label="Train",
+        )
+        ax.plot(
+            epochs,
+            self.history["val_loss"],
+            marker="s",
+            linewidth=1.5,
+            markersize=3,
+            label="Validation",
+        )
         ax.set_xlabel("Epoch")
         ax.set_ylabel("MSE Loss")
         ax.set_title("Training and Validation Loss")
@@ -809,7 +1042,14 @@ class SMAAnnTrainer:
         fig.savefig(self.output_dir / "loss_curve.png", dpi=160)
         plt.close(fig)
 
-    def _save_scatter_plot(self, y_true: np.ndarray, y_pred: np.ndarray, r2_values: list[float], suffix: str, normalized: bool) -> None:
+    def _save_scatter_plot(
+        self,
+        y_true: np.ndarray,
+        y_pred: np.ndarray,
+        r2_values: list[float],
+        suffix: str,
+        normalized: bool,
+    ) -> None:
         fig, axes = plt.subplots(2, 2, figsize=(10, 8))
         axes = axes.reshape(-1)
         for idx, axis in enumerate(axes):
@@ -826,7 +1066,9 @@ class SMAAnnTrainer:
                 axis.plot([y_min, y_max], [y_min, y_max], "r--", linewidth=1.2)
                 axis.set_xlabel(f"{self.config.label_names[idx]} true")
                 axis.set_ylabel(f"{self.config.label_names[idx]} pred")
-            axis.set_title(f"{self.config.label_names[idx]} | R^2 = {r2_values[idx]:.4f}")
+            axis.set_title(
+                f"{self.config.label_names[idx]} | R^2 = {r2_values[idx]:.4f}"
+            )
             axis.grid(True)
         fig.tight_layout()
         fig.savefig(self.output_dir / f"test_scatter_{suffix}.png", dpi=160)
@@ -855,16 +1097,34 @@ class SMAAnnTrainer:
             true_values = artifacts["split_data"]["y_test"][idx]
             pred_values = artifacts["y_test_pred"][idx]
             print(f"Sample {idx + 1} | rate = {rate:.2f} %/s")
-            print(f"  true = [{true_values[0]:10.4f} {true_values[1]:10.4f} {true_values[2]:10.6f} {true_values[3]:10.4f}]")
-            print(f"  pred = [{pred_values[0]:10.4f} {pred_values[1]:10.4f} {pred_values[2]:10.6f} {pred_values[3]:10.4f}]")
+            print(
+                f"  true = [{true_values[0]:10.4f} {true_values[1]:10.4f} {true_values[2]:10.6f} {true_values[3]:10.4f}]"
+            )
+            print(
+                f"  pred = [{pred_values[0]:10.4f} {pred_values[1]:10.4f} {pred_values[2]:10.6f} {pred_values[3]:10.4f}]"
+            )
         print(f"\nSaved Python model artifacts -> {self.output_dir}")
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Train DNN regressor for SMA dataset with C-focused weighted loss.")
-    parser.add_argument("--root", type=Path, default=Path(__file__).resolve().parent, help="Workspace root")
-    parser.add_argument("--epochs", type=int, default=None, help="Override number of epochs")
-    parser.add_argument("--c-loss-weight", type=float, default=None, help="Override loss weight for coefficient C")
+    parser = argparse.ArgumentParser(
+        description="Train DNN regressor for SMA dataset with C-focused weighted loss."
+    )
+    parser.add_argument(
+        "--root",
+        type=Path,
+        default=Path(__file__).resolve().parent,
+        help="Workspace root",
+    )
+    parser.add_argument(
+        "--epochs", type=int, default=None, help="Override number of epochs"
+    )
+    parser.add_argument(
+        "--c-loss-weight",
+        type=float,
+        default=None,
+        help="Override loss weight for coefficient C",
+    )
     args = parser.parse_args()
     config = SMAAnnConfig()
     if args.epochs is not None:
