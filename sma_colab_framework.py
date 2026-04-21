@@ -14,6 +14,7 @@ from train_sma_ann import SMAAnnConfig, SMAAnnTrainer
 from train_sma_cnn import SMACNNConfig, SMACNNTrainer
 from train_sma_c_physics import SMACPhysicsConfig, SMACPhysicsTrainer
 from train_sma_multibranch import SMAMultiBranchConfig, SMAMultiBranchTrainer
+from train_sma_multitask_physics import SMAMultiTaskPhysicsConfig, SMAMultiTaskPhysicsTrainer
 from train_sma_resdnn import SMAResidualDNNConfig, SMAResidualDNNTrainer
 from train_sma_resdnn_v2 import SMAResidualDNNV2Config, SMAResidualDNNV2Trainer
 from train_sma_resdnn_v3 import SMAResidualDNNV3Config, SMAResidualDNNV3Trainer
@@ -93,6 +94,13 @@ class TimestampedCPhysicsTrainer(SMACPhysicsTrainer):
 
 class TimestampedMultiBranchTrainer(SMAMultiBranchTrainer):
     def __init__(self, root: Path, config: SMAMultiBranchConfig, output_dir: Path) -> None:
+        super().__init__(root, config)
+        self.output_dir = output_dir
+        self.output_dir.mkdir(parents=True, exist_ok=True)
+
+
+class TimestampedMultiTaskPhysicsTrainer(SMAMultiTaskPhysicsTrainer):
+    def __init__(self, root: Path, config: SMAMultiTaskPhysicsConfig, output_dir: Path) -> None:
         super().__init__(root, config)
         self.output_dir = output_dir
         self.output_dir.mkdir(parents=True, exist_ok=True)
@@ -211,6 +219,30 @@ MODEL_SPEC_DEFINITIONS: dict[str, dict[str, Any]] = {
             "learning_rate": 4e-4,
             "batch_size": 64,
             "epochs": 220
+        },
+    },
+    "multitask_physics": {
+        "name": "multitask_physics",
+        "config_cls": SMAMultiTaskPhysicsConfig,
+        "trainer_cls": TimestampedMultiTaskPhysicsTrainer,
+        "description": "Physics-guided multi-head network for C, L, k, Asd with specialized branches and heads",
+        "task_family": "neural",
+        "base_overrides": {
+            "loading_hidden": (256, 128),
+            "unloading_hidden": (256, 128),
+            "hysteresis_hidden": (128, 64),
+            "reverse_onset_hidden": (128, 64),
+            "rate_hidden": (64, 32),
+            "fusion_hidden": (256, 128),
+            "c_head_hidden": (64, 32),
+            "l_head_hidden": (96, 48),
+            "k_head_hidden": (96, 48),
+            "asd_head_hidden": (64, 32),
+            "dropout": 0.06,
+            "learning_rate": 4e-4,
+            "batch_size": 64,
+            "epochs": 240,
+            "c_loss_weight": 1.3
         },
     },
     "multibranch": {
