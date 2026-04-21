@@ -8,13 +8,17 @@ from typing import Any
 import numpy as np
 import torch
 from torch import nn
+import matplotlib
+
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt
 
 from train_sma_ann import SMAAnnConfig, SMAAnnTrainer
 
 
 @dataclass
 class SMACPhysicsConfig(SMAAnnConfig):
-    output_size: int = 1
+    output_size: int = 4
     label_names: tuple[str, ...] = ("C",)
     target_min: tuple[float, ...] = (800.0,)
     target_max: tuple[float, ...] = (2000.0,)
@@ -90,7 +94,7 @@ class SMACPhysicsNet(nn.Module):
         self.head = nn.Sequential(*fusion_layers)
 
     @staticmethod
-    def build_rate_features(loading: torch.Tensor, unloading: torch.Tensor, rate: torch.Tensor) -> torch.Tensor:
+    def build_rate_features(loading: torch.Tensor, unloading: torch.Tensor, rate: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
         unloading_reversed = torch.flip(unloading, dims=[1])
         gap = torch.abs(loading - unloading_reversed)
         peak_stress = torch.max(torch.cat([loading, unloading], dim=1), dim=1, keepdim=True).values
@@ -129,6 +133,82 @@ class SMACPhysicsTrainer(SMAAnnTrainer):
         self.output_dir = self.root / "python_c_physics_outputs"
         self.output_dir.mkdir(exist_ok=True)
         self.model = SMACPhysicsNet(self.config).to(self.device)
+
+    def make_weighted_mse(self) -> nn.Module:
+        weights = torch.ones(1, dtype=torch.float32, device=self.device)
+        if self.config.loss_name == "mse":
+            from train_sma_ann import WeightedMSELoss
+
+            return WeightedMSELoss(weights)
+        if self.config.loss_name == "huber":
+            from train_sma_ann import WeightedHuberLoss
+
+            return WeightedHuberLoss(weights, self.config.huber_delta)
+        raise ValueError(f"Unsupported loss_name '{self.config.loss_name}'.")
+
+    def save_plots(self, artifacts: dict[str, Any]) -> None:
+        self._save_loss_plot()
+        self._save_single_scatter_plot(
+            artifacts["split_data"]["y_test"],
+            artifacts["y_test_pred"],
+            float(artifacts["test_metrics"]["r2"][0]),
+            "physical",
+            False,
+        )
+        self._save_single_scatter_plot(
+            artifacts["split_data"]["y_test_norm"],
+            artifacts["y_test_pred_norm"],
+            float(artifacts["test_metrics_norm"]["r2"][0]),
+            "normalized",
+            True,
+        )
+
+    def _save_single_scatter_plot(
+        self,
+        y_true: np.ndarray,
+        y_pred: np.ndarray,
+        r2_value: float,
+        suffix: str,
+        normalized: bool,
+    ) -> None:
+        fig, ax = plt.subplots(figsize=(5.5, 5.0))
+        ax.scatter(y_true[:, 0], y_pred[:, 0], s=14)
+        if normalized:
+            ax.plot([0.0, 1.0], [0.0, 1.0], "r--", linewidth=1.2)
+            ax.set_xlim(0.0, 1.0)
+            ax.set_ylim(0.0, 1.0)
+            ax.set_xlabel("C true (norm)")
+            ax.set_ylabel("C pred (norm)")
+        else:
+            y_min = float(min(np.min(y_true[:, 0]), np.min(y_pred[:, 0])))
+            y_max = float(max(np.max(y_true[:, 0]), np.max(y_pred[:, 0])))
+            ax.plot([y_min, y_max], [y_min, y_max], "r--", linewidth=1.2)
+            ax.set_xlabel("C true")
+            ax.set_ylabel("C pred")
+        ax.set_title(f"C | R^2 = {r2_value:.4f}")
+        ax.grid(True)
+        fig.tight_layout()
+        fig.savefig(self.output_dir / f"test_scatter_{suffix}.png", dpi=160)
+        plt.close(fig)
+
+    def print_summary(self, artifacts: dict[str, Any]) -> None:
+        import time
+
+        if self.run_started_at is not None:
+            elapsed_seconds = time.perf_counter() - self.run_started_at
+            print(f"Elapsed time = {elapsed_seconds / 60.0:.2f} minutes")
+        print("Normalized-space test MAE [C] =")
+        print(np.array(artifacts["test_metrics_norm"]["mae"]))
+        print("Normalized-space test RMSE [C] =")
+        print(np.array(artifacts["test_metrics_norm"]["rmse"]))
+        print("Normalized-space test R2 [C] =")
+        print(np.array(artifacts["test_metrics_norm"]["r2"]))
+        print("Test MAE [C] =")
+        print(np.array(artifacts["test_metrics"]["mae"]))
+        print("Test RMSE [C] =")
+        print(np.array(artifacts["test_metrics"]["rmse"]))
+        print("Test R2 [C] =")
+        print(np.array(artifacts["test_metrics"]["r2"]))
 
     def prepare_datasets(self, train_raw: dict[str, np.ndarray], test_raw: dict[str, np.ndarray]) -> dict[str, Any]:
         split_data = super().prepare_datasets(train_raw, test_raw)

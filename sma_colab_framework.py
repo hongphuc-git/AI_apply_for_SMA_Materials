@@ -14,6 +14,7 @@ from train_sma_ann import SMAAnnConfig, SMAAnnTrainer
 from train_sma_cnn import SMACNNConfig, SMACNNTrainer
 from train_sma_c_physics import SMACPhysicsConfig, SMACPhysicsTrainer
 from train_sma_multibranch import SMAMultiBranchConfig, SMAMultiBranchTrainer
+from train_sma_hybrid_split import SMAHybridSplitConfig, SMAHybridSplitTrainer
 from train_sma_multitask_physics import SMAMultiTaskPhysicsConfig, SMAMultiTaskPhysicsTrainer
 from train_sma_resdnn import SMAResidualDNNConfig, SMAResidualDNNTrainer
 from train_sma_resdnn_v2 import SMAResidualDNNV2Config, SMAResidualDNNV2Trainer
@@ -104,6 +105,15 @@ class TimestampedMultiTaskPhysicsTrainer(SMAMultiTaskPhysicsTrainer):
         super().__init__(root, config)
         self.output_dir = output_dir
         self.output_dir.mkdir(parents=True, exist_ok=True)
+
+
+class TimestampedHybridSplitTrainer(SMAHybridSplitTrainer):
+    def __init__(self, root: Path, config: SMAHybridSplitConfig, output_dir: Path) -> None:
+        super().__init__(root, config)
+        self.output_dir = output_dir
+        self.output_dir.mkdir(parents=True, exist_ok=True)
+        self.model_dir = self.output_dir / "sma_hybrid_split_regressor"
+        self.model_dir.mkdir(exist_ok=True)
 
 
 class TimestampedResidualDNNTrainer(SMAResidualDNNTrainer):
@@ -220,6 +230,14 @@ MODEL_SPEC_DEFINITIONS: dict[str, dict[str, Any]] = {
             "batch_size": 64,
             "epochs": 220
         },
+    },
+    "hybrid_split": {
+        "name": "hybrid_split",
+        "config_cls": SMAHybridSplitConfig,
+        "trainer_cls": TimestampedHybridSplitTrainer,
+        "description": "Hybrid split model: XGBoost predicts C/L/k from loading, residual net predicts Asd from unloading",
+        "task_family": "hybrid",
+        "supports_train_optimizer": False,
     },
     "multitask_physics": {
         "name": "multitask_physics",
