@@ -12,6 +12,7 @@ from typing import Any, Callable
 
 from train_sma_ann import SMAAnnConfig, SMAAnnTrainer
 from train_sma_cnn import SMACNNConfig, SMACNNTrainer
+from train_sma_multibranch import SMAMultiBranchConfig, SMAMultiBranchTrainer
 from train_sma_resdnn import SMAResidualDNNConfig, SMAResidualDNNTrainer
 from train_sma_resdnn_v2 import SMAResidualDNNV2Config, SMAResidualDNNV2Trainer
 from train_sma_resdnn_v3 import SMAResidualDNNV3Config, SMAResidualDNNV3Trainer
@@ -77,6 +78,13 @@ class TimestampedANNTrainer(SMAAnnTrainer):
 
 class TimestampedCNNTrainer(SMACNNTrainer):
     def __init__(self, root: Path, config: SMACNNConfig, output_dir: Path) -> None:
+        super().__init__(root, config)
+        self.output_dir = output_dir
+        self.output_dir.mkdir(parents=True, exist_ok=True)
+
+
+class TimestampedMultiBranchTrainer(SMAMultiBranchTrainer):
+    def __init__(self, root: Path, config: SMAMultiBranchConfig, output_dir: Path) -> None:
         super().__init__(root, config)
         self.output_dir = output_dir
         self.output_dir.mkdir(parents=True, exist_ok=True)
@@ -178,6 +186,24 @@ MODEL_SPEC_DEFINITIONS: dict[str, dict[str, Any]] = {
         "trainer_cls": TimestampedCNNTrainer,
         "description": "1D CNN over stress curve plus rate feature",
         "task_family": "neural",
+    },
+    "multibranch": {
+        "name": "multibranch",
+        "config_cls": SMAMultiBranchConfig,
+        "trainer_cls": TimestampedMultiBranchTrainer,
+        "description": "Multi-branch network with separate loading, unloading, and rate encoders",
+        "task_family": "neural",
+        "base_overrides": {
+            "loading_hidden": (256, 128),
+            "unloading_hidden": (256, 128),
+            "rate_hidden": (32, 16),
+            "fusion_hidden": (256, 128),
+            "dropout": 0.06,
+            "learning_rate": 5e-4,
+            "batch_size": 64,
+            "epochs": 220,
+            "c_loss_weight": 2.5,
+        },
     },
     "resdnn": {
         "name": "resdnn",

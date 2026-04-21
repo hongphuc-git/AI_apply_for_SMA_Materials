@@ -15,6 +15,7 @@ from train_sma_ann import (
     MinMaxNormalizer,
     RegressionMetrics,
     SMAAnnConfig,
+    SMAAnnTrainer,
     estimate_runtime_band,
     summarize_split_shapes,
 )
@@ -273,7 +274,7 @@ class SMAXGBoostTrainer:
         for label_name in self.config.label_names:
             model = self.models[label_name]
             outputs.append(np.asarray(model.predict(x), dtype=np.float32).reshape(-1, 1))
-        return np.concatenate(outputs, axis=1)
+        return SMAAnnTrainer.constrain_normalized_predictions(np.concatenate(outputs, axis=1))
 
     def evaluate(self, split_data: dict[str, Any]) -> dict[str, Any]:
         y_train_pred_norm = self.predict(split_data["x_train_norm"])

@@ -1,0 +1,11 @@
+{
+  "hidden_layers": [128, 64],
+  "dropout": 0.05,
+  "epochs": 50,
+  "batch_size": 32,
+  "learning_rate": 0.001,
+  "c_loss_weight": 1.0,
+  "early_stopping_patience": 12,
+  "weight_decay": 0.00001,
+  "use_output_sigmoid": true
+}

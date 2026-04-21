@@ -16,6 +16,7 @@ from train_sma_ann import (
     MinMaxNormalizer,
     RegressionMetrics,
     SMAAnnConfig,
+    SMAAnnTrainer,
     estimate_runtime_band,
     summarize_split_shapes,
 )
@@ -281,7 +282,7 @@ class SMASklearnEnsembleTrainer:
         if self.model is None:
             raise ValueError("Model is not trained.")
         prediction = self.model.predict(x)
-        return np.asarray(prediction, dtype=np.float32)
+        return SMAAnnTrainer.constrain_normalized_predictions(np.asarray(prediction, dtype=np.float32))
 
     def evaluate(self, split_data: dict[str, Any]) -> dict[str, Any]:
         y_train_pred_norm = self.predict(split_data["x_train_norm"])

@@ -1,0 +1,12 @@
+{
+  "hidden_layers": [768, 384],
+  "block_width": 384,
+  "num_residual_blocks": 8,
+  "dropout": 0.05,
+  "learning_rate": 0.00015,
+  "batch_size": 96,
+  "epochs": 320,
+  "weight_decay": 0.00001,
+  "c_loss_weight": 2.0,
+  "use_output_sigmoid": true
+}

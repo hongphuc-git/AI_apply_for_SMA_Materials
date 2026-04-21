@@ -33,7 +33,7 @@ class SMAAnnConfig:
     output_size: int = 4
     hidden_layers: tuple[int, ...] = (512, 256, 128, 64)
     dropout: float = 0.10
-    use_output_sigmoid: bool = False
+    use_output_sigmoid: bool = True
     learning_rate: float = 8e-4
     weight_decay: float = 1e-5
     optimizer_name: str = "adamw"
@@ -911,6 +911,10 @@ class SMAAnnTrainer:
                 total_count += features.size(0)
         return total_loss / max(total_count, 1)
 
+    @staticmethod
+    def constrain_normalized_predictions(predictions: np.ndarray) -> np.ndarray:
+        return np.clip(np.asarray(predictions, dtype=np.float32), 0.0, 1.0)
+
     def predict(self, x: np.ndarray) -> np.ndarray:
         self.model.eval()
         outputs: list[np.ndarray] = []
@@ -920,7 +924,7 @@ class SMAAnnTrainer:
             for (features,) in loader:
                 features = features.to(self.device)
                 outputs.append(self.model(features).cpu().numpy())
-        return np.concatenate(outputs, axis=0)
+        return self.constrain_normalized_predictions(np.concatenate(outputs, axis=0))
 
     def evaluate(self, split_data: dict[str, Any]) -> dict[str, Any]:
         y_train_pred_norm = self.predict(split_data["x_train_norm"])
