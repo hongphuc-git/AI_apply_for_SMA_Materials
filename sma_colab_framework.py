@@ -12,6 +12,7 @@ from typing import Any, Callable
 
 from train_sma_ann import SMAAnnConfig, SMAAnnTrainer
 from train_sma_cnn import SMACNNConfig, SMACNNTrainer
+from train_sma_c_physics import SMACPhysicsConfig, SMACPhysicsTrainer
 from train_sma_multibranch import SMAMultiBranchConfig, SMAMultiBranchTrainer
 from train_sma_resdnn import SMAResidualDNNConfig, SMAResidualDNNTrainer
 from train_sma_resdnn_v2 import SMAResidualDNNV2Config, SMAResidualDNNV2Trainer
@@ -78,6 +79,13 @@ class TimestampedANNTrainer(SMAAnnTrainer):
 
 class TimestampedCNNTrainer(SMACNNTrainer):
     def __init__(self, root: Path, config: SMACNNConfig, output_dir: Path) -> None:
+        super().__init__(root, config)
+        self.output_dir = output_dir
+        self.output_dir.mkdir(parents=True, exist_ok=True)
+
+
+class TimestampedCPhysicsTrainer(SMACPhysicsTrainer):
+    def __init__(self, root: Path, config: SMACPhysicsConfig, output_dir: Path) -> None:
         super().__init__(root, config)
         self.output_dir = output_dir
         self.output_dir.mkdir(parents=True, exist_ok=True)
@@ -186,6 +194,24 @@ MODEL_SPEC_DEFINITIONS: dict[str, dict[str, Any]] = {
         "trainer_cls": TimestampedCNNTrainer,
         "description": "1D CNN over stress curve plus rate feature",
         "task_family": "neural",
+    },
+    "c_physics": {
+        "name": "c_physics",
+        "config_cls": SMACPhysicsConfig,
+        "trainer_cls": TimestampedCPhysicsTrainer,
+        "description": "C-only physics-guided network using loading, hysteresis, and thermal proxy branches",
+        "task_family": "neural",
+        "base_overrides": {
+            "loading_hidden": (256, 128),
+            "hysteresis_hidden": (128, 64),
+            "rate_hidden": (48, 24),
+            "thermal_hidden": (96, 48),
+            "fusion_hidden": (128, 64),
+            "dropout": 0.05,
+            "learning_rate": 4e-4,
+            "batch_size": 64,
+            "epochs": 220
+        },
     },
     "multibranch": {
         "name": "multibranch",
