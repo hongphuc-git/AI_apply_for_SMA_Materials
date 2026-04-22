@@ -43,6 +43,7 @@ class SMAAnnConfig:
     checkpoint_every_epochs: int = 10
     resume_from_dir: str | None = None
     c_loss_weight: float = 2.8
+    asd_loss_weight: float = 2.0
     loss_name: str = "mse"
     huber_delta: float = 0.03
     gradient_clip_norm: float | None = None
@@ -57,6 +58,12 @@ class SMAAnnConfig:
     label_names: tuple[str, ...] = ("C", "L", "k", "Asd")
     target_min: tuple[float, ...] = (800.0, 400.0, 0.001, 247.0)
     target_max: tuple[float, ...] = (2000.0, 40000.0, 0.100, 263.2)
+    # --- Input normalization domain bounds (vật lý) ---
+    # stress_global_max: giá trị stress tối đa (MPa) dùng để scale toàn bộ 400 điểm
+    # rate_min / rate_max: biên domain của strain rate để normalize cột rate
+    stress_global_max: float = 800.0
+    rate_domain_min: float = 0.0126
+    rate_domain_max: float = 0.5027
 
 
 class MinMaxNormalizer:
@@ -477,7 +484,8 @@ class SMAAnnTrainer:
         weights = torch.ones(
             self.config.output_size, dtype=torch.float32, device=self.device
         )
-        weights[0] = float(self.config.c_loss_weight)
+        weights[0] = float(self.config.c_loss_weight)    # C
+        weights[3] = float(self.config.asd_loss_weight)  # Asd (khó học nhất)
         if self.config.loss_name == "mse":
             return WeightedMSELoss(weights)
         if self.config.loss_name == "huber":
@@ -674,6 +682,25 @@ class SMAAnnTrainer:
             "extra_state": checkpoint_payload.get("extra_state", {}),
         }
 
+    def _normalize_inputs(
+        self,
+        x_stress: np.ndarray,
+        rate: np.ndarray,
+    ) -> np.ndarray:
+        """Chuẩn hóa input theo domain vật lý:
+        - 400 điểm stress: chia global max (MPa) → [0, 1]
+        - 1 cột rate: MinMax theo domain bounds → [0, 1]
+        Không fit trên data để tránh per-column stretch phá mối quan hệ tương đối.
+        """
+        stress_max = float(self.config.stress_global_max)
+        rate_min = float(self.config.rate_domain_min)
+        rate_max = float(self.config.rate_domain_max)
+        rate_span = rate_max - rate_min if rate_max > rate_min else 1.0
+
+        stress_norm = np.clip(x_stress / stress_max, 0.0, 1.0)
+        rate_norm = np.clip((rate - rate_min) / rate_span, 0.0, 1.0).reshape(-1, 1)
+        return np.column_stack([stress_norm, rate_norm]).astype(np.float32)
+
     def prepare_datasets(
         self, train_raw: dict[str, np.ndarray], test_raw: dict[str, np.ndarray]
     ) -> dict[str, Any]:
@@ -696,26 +723,51 @@ class SMAAnnTrainer:
         y_val = y_train_all[val_idx]
         rate_val = rate_train_all[val_idx]
 
-        x_train = np.column_stack([x_train, rate_train]).astype(np.float32)
-        x_val = np.column_stack([x_val, rate_val]).astype(np.float32)
-        x_test = np.column_stack([x_test, rate_test]).astype(np.float32)
+        # --- Chuẩn hóa input theo domain vật lý (không fit per-column) ---
+        # Cũ: MinMax fit trên data → stretch mỗi cột khác nhau, phá quan hệ tương đối
+        # Mới: stress / stress_global_max, rate → [0,1] theo domain bounds
+        x_train_norm = self._normalize_inputs(x_train, rate_train)
+        x_val_norm   = self._normalize_inputs(x_val,   rate_val)
+        x_test_norm  = self._normalize_inputs(x_test,  rate_test)
 
-        x_train_norm = self.input_normalizer.fit(x_train).transform(x_train)
-        x_val_norm = self.input_normalizer.transform(x_val)
-        x_test_norm = self.input_normalizer.transform(x_test)
+        # Để tương thích với checkpoint serialization, ghi thông tin scale vào input_normalizer
+        # dưới dạng global scaler 1 chiều (scalar broadcast)
+        stress_max = float(self.config.stress_global_max)
+        rate_min   = float(self.config.rate_domain_min)
+        rate_max   = float(self.config.rate_domain_max)
+        n_stress   = self.config.input_stress_points
+        global_min = np.zeros(n_stress + 1, dtype=np.float64)
+        global_max = np.full(n_stress + 1, stress_max, dtype=np.float64)
+        global_max[n_stress] = rate_max  # cột rate cuối cùng
+        global_min[n_stress] = rate_min
+        self.input_normalizer.y_min  = global_min
+        self.input_normalizer.y_max  = global_max
+        self.input_normalizer._refresh()
+
+        # Kiểm tra nhất quán với use_output_sigmoid
         y_train_norm = self.target_normalizer.transform(y_train).astype(np.float32)
-        y_val_norm = self.target_normalizer.transform(y_val).astype(np.float32)
-        y_test_norm = self.target_normalizer.transform(y_test).astype(np.float32)
+        y_val_norm   = self.target_normalizer.transform(y_val).astype(np.float32)
+        y_test_norm  = self.target_normalizer.transform(y_test).astype(np.float32)
+        if self.config.use_output_sigmoid:
+            assert y_train_norm.min() >= -0.05 and y_train_norm.max() <= 1.05, (
+                "use_output_sigmoid=True nhưng target_normalizer cho ra giá trị ngoài [0,1]. "
+                "Kiểm tra lại target_min / target_max trong SMAAnnConfig."
+            )
+
+        # x_train / x_val / x_test lưu dạng raw (stress + rate nối cột) cho evaluate/plot
+        x_train_raw = np.column_stack([x_train, rate_train]).astype(np.float32)
+        x_val_raw   = np.column_stack([x_val,   rate_val]).astype(np.float32)
+        x_test_raw  = np.column_stack([x_test,  rate_test]).astype(np.float32)
 
         return {
             "epsTarget": train_raw["epsTarget"],
-            "x_train": x_train,
+            "x_train": x_train_raw,
             "y_train": y_train,
             "rate_train": rate_train,
-            "x_val": x_val,
+            "x_val": x_val_raw,
             "y_val": y_val,
             "rate_val": rate_val,
-            "x_test": x_test,
+            "x_test": x_test_raw,
             "y_test": y_test,
             "rate_test": rate_test,
             "x_train_norm": x_train_norm,
