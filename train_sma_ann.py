@@ -518,54 +518,93 @@ class SMAAnnTrainer:
             ),
         )
         total_steps = steps_per_epoch * max(int(self.config.epochs), 1)
-        print("Run overview")
-        print(f"  Data directory      : {self.data_dir}")
-        print("  Data files         : train.mat + test.mat")
-        print(
-            f"  Input format       : X + rate -> {shape_summary['feature_dim']} features per sample"
-        )
-        print(
-            f"  Target format      : Y -> {shape_summary['target_dim']} regression targets {self.config.label_names}"
-        )
-        print(
-            f"  Dataset split      : train={shape_summary['train_samples']}, val={shape_summary['val_samples']}, test={shape_summary['test_samples']}"
-        )
-        print(f"  Rate coverage      : {shape_summary['rate_summary']}")
-        print(f"  Device             : {build_device_summary(self.device)}")
-        print(f"  Model              : {self.model.__class__.__name__}")
-        print(
-            f"  Parameters         : total={total_params:,}, trainable={trainable_params:,}"
-        )
-        print(
-            f"  Config             : epochs={self.config.epochs}, batch_size={self.config.batch_size}, lr={self.config.learning_rate:g}, optimizer={self.config.optimizer_name}"
-        )
-        print(
-            f"  Steps              : {steps_per_epoch} per epoch, {total_steps} total"
-        )
-        print(
-            "  Time estimate      : "
-            + estimate_runtime_band(
-                total_steps,
-                shape_summary["train_samples"],
-                shape_summary["feature_dim"],
-                total_params,
-                self.device.type,
-            )
-        )
-        print(
-            "  Hardware fit       : "
-            + build_hardware_fit_note(
-                self.device,
-                int(self.config.batch_size),
-                int(self.config.epochs),
-                total_params,
-            )
-        )
+
+        x_tr_norm = split_data["x_train_norm"]
+        y_tr_norm = split_data["y_train_norm"]
+        x_tr_raw  = split_data["x_train"]
+        y_tr_raw  = split_data["y_train"]
+
+        print("=" * 68)
+        print("  RUN OVERVIEW")
+        print("=" * 68)
+
+        # --- Data ---
+        print("  [Data]")
+        print(f"    Directory         : {self.data_dir}")
+        total_all = (shape_summary["train_samples"]
+                     + shape_summary["val_samples"]
+                     + shape_summary["test_samples"])
+        print(f"    Total samples     : {total_all:,}  "
+              f"(train={shape_summary['train_samples']:,}  "
+              f"val={shape_summary['val_samples']:,}  "
+              f"test={shape_summary['test_samples']:,})")
+        print(f"    Rate coverage     : {shape_summary['rate_summary']}")
+
+        # --- Input normalization ---
+        print("  [Input normalization]")
+        stress_max = float(self.config.stress_global_max)
+        print(f"    Shape             : ({shape_summary['train_samples']}, {shape_summary['feature_dim']})  — stress only (rate not used as input)")
+        print(f"    Method            : stress / {stress_max:.0f} MPa  →  [0, 1]  (global domain scale)")
+        print(f"    Norm range        : [{x_tr_norm.min():.4f}, {x_tr_norm.max():.4f}]  "
+              f"mean={x_tr_norm.mean():.4f}  std={x_tr_norm.std():.4f}")
+        print(f"    Raw stress range  : [{x_tr_raw.min():.2f}, {x_tr_raw.max():.2f}] MPa")
+
+        # --- Output normalization ---
+        print("  [Output normalization]")
+        print(f"    Method            : (Y - target_min) / (target_max - target_min)")
+        print(f"    use_output_sigmoid: {self.config.use_output_sigmoid}")
+        t_min = self.config.target_min
+        t_max = self.config.target_max
+        for i, name in enumerate(self.config.label_names):
+            raw_col  = y_tr_raw[:, i]
+            norm_col = y_tr_norm[:, i]
+            print(f"    {name:4s}  domain=[{t_min[i]:>9.3f}, {t_max[i]:>9.3f}]  "
+                  f"norm=[{norm_col.min():.3f}, {norm_col.max():.3f}]  "
+                  f"data_mean={raw_col.mean():.3f}  std={raw_col.std():.3f}")
+
+        # --- Loss ---
+        print("  [Loss]")
+        loss_desc = self.config.loss_name
+        if self.config.loss_name == "huber":
+            loss_desc += f"  (delta={self.config.huber_delta})"
+        print(f"    Function          : {loss_desc}")
+        weights_info = []
+        for i, name in enumerate(self.config.label_names):
+            if i == 0:
+                w = self.config.c_loss_weight
+            elif i == 3:
+                w = getattr(self.config, "asd_loss_weight", 1.0)
+            else:
+                w = 1.0
+            weights_info.append(f"{name}={w}")
+        print(f"    Weights           : {', '.join(weights_info)}")
+
+        # --- Model ---
+        print("  [Model]")
+        print(f"    Class             : {self.model.__class__.__name__}")
+        print(f"    Parameters        : total={total_params:,}, trainable={trainable_params:,}")
+        print(f"    Device            : {build_device_summary(self.device)}")
+
+        # --- Training ---
+        print("  [Training]")
+        print(f"    Epochs            : {self.config.epochs}  (early stop patience={self.config.early_stopping_patience})")
+        print(f"    Batch size        : {self.config.batch_size}")
+        print(f"    Learning rate     : {self.config.learning_rate:g}  optimizer={self.config.optimizer_name}")
+        print(f"    Steps             : {steps_per_epoch}/epoch × {self.config.epochs} = {total_steps:,} total")
+        print("    Time estimate     : " + estimate_runtime_band(
+            total_steps, shape_summary["train_samples"],
+            shape_summary["feature_dim"], total_params, self.device.type,
+        ))
+        print("    Hardware note     : " + build_hardware_fit_note(
+            self.device, int(self.config.batch_size),
+            int(self.config.epochs), total_params,
+        ))
         resume_checkpoint = self.find_resume_checkpoint_path()
         if resume_checkpoint is not None:
-            print(f"  Resume mode        : auto-resume from {resume_checkpoint}")
-        print("  Architecture")
+            print(f"    Resume from       : {resume_checkpoint}")
+        print("  [Architecture]")
         print(self.model)
+        print("=" * 68)
 
     def find_resume_checkpoint_path(self) -> Path | None:
         checkpoint_path = self.latest_checkpoint_path()
